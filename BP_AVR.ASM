@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.25 2001-03-05 14:51:59 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.26 2001-03-13 16:17:16 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -963,7 +963,16 @@ SPI_read_time_command:
 	rjmp	SPI_quit
 
 SPI_send_acknowledge_command:
-	lds	Tmp0,ChildModeWord
+	ldi	Tmp0,0x33
+	out	SPDR,Tmp0
+	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
+	cbr	SystemFlags,(1<<KEY_IS_PRESSED)
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_read_fatal_error_command:
+	lds	Tmp0,FatalError
 	out	SPDR,Tmp0
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
@@ -973,13 +982,6 @@ SPI_read_buffer_tms_command:
 	ldi	Tmp0,0x55
 	out	SPDR,Tmp0
 	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
-	mov 	SPIByteCounter,Tmp1
-	rjmp	SPI_quit
-
-SPI_read_fatal_error_command:
-	lds	Tmp0,FatalError
-	out	SPDR,Tmp0
-	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
@@ -1116,10 +1118,6 @@ SPI_read_time_minutes_byte:
 	rjmp	SPI_quit
 
 SPI_send_acknowledgement:
-	ldi	Tmp0,0x33
-	out	SPDR,Tmp0
-	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	cbr	SystemFlags,(1<<KEY_IS_PRESSED)
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
