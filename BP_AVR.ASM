@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.20 2001-02-16 09:18:06 zykov Exp $ 
+;$Id: BP_AVR.ASM,v 1.21 2001-02-20 13:06:49 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -155,7 +155,7 @@
 
 	; Port C
   		.equ	BIT_RS_TMS_I=0
-  		.equ	BIT_GEN_STOP=1
+  		.equ	BIT_WDI=1
   		.equ	BIT_CLK_STOP=2
   		.equ	BIT_INT3_OF_TMS=3
   		.equ	BIT_R_BR=4
@@ -702,6 +702,11 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 
 	wdr     ; Watchdog reset
 		; System watch
+	ldi	Tmp1,1<<BIT_WDI	
+	in	Tmp0,PORTC		
+	eor	Tmp0,Tmp1
+	out	PORTC,Tmp0
+		
 	sbic	PINB,BIT_SPI_SS				
 	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
 			
@@ -782,8 +787,8 @@ Timer2_key_1:
 	dec     ThirtySecondsTimer
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
-	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	;sbi     PORTC,BIT_R_BR
+	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
@@ -809,7 +814,6 @@ Timer2_ACTIVE_TMS_FLAG_check:
 	breq	Timer2_quit_
 	
 	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) 	; ACTIVE_TMS_FLAG = 1
-	sbi	PORTC,BIT_GEN_STOP              	; GEN_STOP = 1
 	sbi	PORTC,BIT_R_BR                  	; R_BR = 1
 	sbi	PORTC,BIT_CLK_STOP			; CLK_STOP = 1
 	ldi	Tmp0,WHITE_10_MKS
@@ -1106,7 +1110,6 @@ SPI_wait_30_mks:
 SPI_wait_8_mks:
 	dec	Tmp0
 	brne	SPI_wait_8_mks
-	cbi	PORTC,BIT_GEN_STOP
 	sbi	PORTC,BIT_RS_TMS_I
 	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
