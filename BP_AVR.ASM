@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.12 2000-12-06 14:33:16 peter Exp $ 
+;$Id: BP_AVR.ASM,v 1.13 2000-12-08 10:28:41 peter Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -742,8 +742,8 @@ Timer2_key_1:
 	dec     ThirtySecondsTimer
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
-	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	;sbi     PORTC,BIT_R_BR
+	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
@@ -792,8 +792,10 @@ Timer2_C5VA_question:
 	brne    Timer2_bit_c5va_0
 	ldi	Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
+	
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_bit_c5va_0
+	
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
 	out 	EEARL,Tmp0		;Set EEPROM Address
 	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
@@ -803,8 +805,8 @@ Timer2_C5VA_question:
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp1
-	;cbi     PORTC,BIT_R_BR 		; Impulse R_BR
-	;sbi     PORTC,BIT_R_BR
+	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
@@ -1174,7 +1176,7 @@ ADC_Further:
 	ldi	Tmp2,LOW(PRESSURE_15)	; Compare to PRESSURE_15
 	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
-	brlo 	Pressure_less_15
+	brlo 	Pressure_less_15_0
 
 	ldi	Tmp0,THIRTY_SECONDS
 	mov     ThirtySecondsTimer,Tmp0
@@ -1192,6 +1194,7 @@ ADC_dec_TwoMinutesTimer:
 	cpi     Tmp0,0
 	brne	Press_more_15_flag_check
 	dec	TwoMinutesTimer
+	
 Press_more_15_flag_check:
 	sbrc	InternalFlags,PRESSURE_MORE_15_FLAG
 	rjmp	Two_minutes_check
@@ -1204,6 +1207,8 @@ Two_minutes_check:
 	cpi     Tmp0,0
 	brne	Press_more_295_check
 	;Write EEPROM
+	sbrc	SystemFlags,TEST_FLAG
+	rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_2S
 	rjmp	Fatal_error_occur
 
@@ -1233,11 +1238,22 @@ Press_more_295_check:
 	brne	ADC_quit
 
 	;Write EEPROM
+	ldi	Tmp0,0
+	sts	Pressure320Timer,Tmp0
+	sbrc	SystemFlags,TEST_FLAG
+	rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_315
 	rjmp	Fatal_error_occur
-
+	
+Pressure_less_15_0:
+	rjmp	Pressure_less_15
+	
 Pressure_more_295:
 	;Write EEPROM
+	ldi	Tmp0,0
+	sts	Pressure295Timer,Tmp0
+	sbrc	SystemFlags,TEST_FLAG
+	rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_295
 	rjmp	Fatal_error_occur
 
