@@ -147,8 +147,8 @@
   		.equ	BIT_BUZZ_AV2=1
   		.equ	BIT_KEY_SIGNAL=3
 
-	.equ	IO_PIN_PORTB_FOR_RS=0b00000011
-	.equ	PORTB_FOR_RS=0b00001110
+	.equ	IO_PIN_PORTB_FOR_RS=0b01000011
+	.equ	PORTB_FOR_RS=0b01001110
 
 	; Port C
   		.equ	BIT_RS_TMS_I=0
@@ -307,7 +307,6 @@ Int_error:
 
 Reset: 		; Reset Handler
 	cli
-	sbi	PORTD,BIT_ERR0
 	in	Tmp0,MCUSR
 ;	sbrs	Tmp0,PORF
 	rjmp    Init_start
@@ -431,18 +430,18 @@ Wait_update_assr:
 	out	SPCR,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	
-;	ldi	Tmp2,0x007
-;Wiat02:		
-;	ldi	Tmp1,0x0FF
-;Wiat01:	
-;	ldi	Tmp0,0x0FF
-;Wiat00:	
-;	dec	Tmp0
-;	brne	Wiat00
-;	dec	Tmp1
-;	brne	Wiat01
-;	dec	Tmp2
-;	brne	Wiat02
+	ldi	Tmp2,0x007
+Wiat02:		
+	ldi	Tmp1,0x0FF
+Wiat01:	
+	ldi	Tmp0,0x0FF
+Wiat00:	
+	dec	Tmp0
+	brne	Wiat00
+	dec	Tmp1
+	brne	Wiat01
+	dec	Tmp2
+	brne	Wiat02
 			
 Init_white_INT1_1:
 	nop
