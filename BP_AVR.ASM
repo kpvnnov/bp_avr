@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.29 2001-03-15 14:42:45 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.30 2001-03-15 15:08:30 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -1074,12 +1074,12 @@ SPI_system_stat_end:
 	rjmp	SPI_quit
 SPI_system_stat_word_2:
 	out	SPDR,SystemFlags
-	;out	UDR,SystemFlags	
+	out	UDR,SystemFlags	
 	rjmp	SPI_quit
 SPI_system_stat_child_mode:
 	lds	Tmp0,ChildModeWord
 	out	SPDR,Tmp0
-	;out	UDR,Tmp0	
+	out	UDR,Tmp0	
 	rjmp	SPI_quit
 
 SPI_read_fatal_error:
