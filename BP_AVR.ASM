@@ -102,12 +102,12 @@
 	.equ	INT1_EN=1<<INT1
 
 	; for MCUCR
-	.equ	IDLE_MODE_MCUCR=0b00001000
-	.equ	POWER_DOWN_MODE_MCUCR=0b00101000
-	.equ	POWER_SAVE_MODE_MCUCR=0b00111000
+	.equ	IDLE_MODE_MCUCR=0b01001000
+	.equ	POWER_DOWN_MODE_MCUCR=0b01101000
+	.equ	POWER_SAVE_MODE_MCUCR=0b01111000
 
 	; for WDTCR
-	.equ	WATCHDOG_05_SEC=0b00001101
+	.equ	WATCHDOG_05_SEC=0b00001001	;0b00001101
 	.equ	WATCHDOG_2_SEC=0b00001111
 
 	; for TIMSK
@@ -302,19 +302,20 @@ Int_error:
 
 Reset: 		; Reset Handler
 	cli
+	sbi	PORTD,BIT_ERR0
 	in	Tmp0,MCUSR
-	sbrs	Tmp0,PORF
+		sbrs	Tmp0,PORF
+		cbi	PORTD,BIT_ERR0
+;		sbrs	Tmp0,PORF	
+;		rjmp	Porf_check
+;Porf_check:
+	sbrc	Tmp0,PORF	
 	rjmp    Init_start
 
 Power_down_mode:
 	wdr
 	ldi 	Tmp0,WATCHDOG_05_SEC
 	out	WDTCR,Tmp0
-
-	ldi 	Tmp0,0
-	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable!
-	out 	TIMSK,Tmp0		;Time interrupts disable!
-	out 	ADCSR,Tmp0		;ADC=OFF
 
 	ldi 	Tmp0,TIM0_PRESCALER_0
 	out 	TCCR0,Tmp0		;Timer0 stop!
@@ -393,6 +394,7 @@ Init_start:
 	out 	UBRR,Tmp0
 	ldi 	Tmp0,USB_TRANSMIT_ONLY
 	out 	UCR,Tmp0
+	out	UDR,Tmp0
 
 	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -435,6 +437,8 @@ Init_start:
 
 Init_white_INT1_1:
 	nop
+		cbi	PORTD,BIT_ERR0
+		sbi	PORTD,BIT_ERR0
 	sbis    PORTD,BIT_LOW_BATTERY
 	rjmp    Init_white_INT1_1
 
