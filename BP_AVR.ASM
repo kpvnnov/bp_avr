@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.19 2001-02-14 17:25:27 zykov Exp $ 
+;$Id: BP_AVR.ASM,v 1.20 2001-02-16 09:18:06 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -86,8 +86,8 @@
 		.equ	PRESSURE_MORE_15_FLAG=2      	; 0
 	     	.equ	BUZZER_FLAG=3                   ; 0
 		.equ	FIRST_BYTE_OF_SPI=4		; 1
-		.equ	CHILD_MODE=5			; if ChildModeWord=A5h then 1, else 0
-	.def 	SystemFlags=r21                          ;
+		.equ	EXTERNAL_BUZZER_FLAG=5		; 0
+	.def 	SystemFlags=r21                         ;
 	     	.equ	SYSTEM_RS_FLAG=0                ; 1
 	     	.equ	LOW_BATTERY_FLAG=1              ; 0
 	     	.equ	SECOND_FLAG=2                   ; 0
@@ -193,7 +193,8 @@
 	.equ    EEPROMByteCounter=0x6B
 	.equ    FatalError=0x6C
 	.equ	ChildModeWord=0x6D
-	.equ	SPISerialNumber=0x6E
+	.equ	BuzzerCounter0=0x6E
+	.equ	BuzzerCounter1=0x6F
 	.equ	SPINewTime=0x70			; 3-ть байт		
 	.equ	SPIBufferForTms=0x80		; 64-ть байт
 
@@ -207,7 +208,7 @@
 	.equ 	PRESSURE_10=0x001E
 	.equ 	PRESSURE_12=0x0023	;24
 	.equ 	PRESSURE_15=0x002B	;2D
-	.equ 	PRESSURE_195=0x023A	;378
+	.equ 	PRESSURE_200=0x0249	;378
 	.equ 	PRESSURE_210=0x0267	;3C3	
 	.equ 	PRESSURE_295=0x035F	;378
 	.equ 	PRESSURE_320=0x03A8	;3C3
@@ -219,15 +220,15 @@
 	.equ	SECOND_1=4
 	.equ	SECOND_15=60
 	.equ    THIRTY_SECONDS=120
-	.equ	TWO_MINUTES=120	;118 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	.equ	TWO_MINUTES=120			; 118 !!!!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
 	.equ    TWO_HOURS=120
 
 	.equ	WHITE_10_MKS=12
 	.equ	WHITE_30_MKS=40
 	.equ	WHITE_8_MKS=10
-	.equ	TIM0_1_MS=239		 	;255-16  prescaler=256
-	.equ	TIM0_5_MS=175              	;255-80  prescaler=256
+	.equ	TIM0_1_MS=239		 	; 255-16  prescaler=256
+	.equ	TIM0_5_MS=175              	; 255-80  prescaler=256
 	.equ    TIMER1_4_KHZ=0x0FF8D		; 0x0FFFF-((250*3.6468)/8)
 	.equ    TIMER1_PRESCALE_8=2
 
@@ -243,7 +244,7 @@
 	.equ    HOURS_COUNTER_MAX_VALUE=24
 	.equ    MAX_LOW_BATTERY_TIMER=20
 	
-	.equ	SIZE_BUFFER_FOR_TMS=4
+	.equ	SIZE_BUFFER_FOR_TMS=7
 
 ;********************************************************************
 ; Interrupts vectors
@@ -258,7 +259,7 @@
         rjmp 	TIM1_compa 	; Timer1 compare Handler
         rjmp 	TIM1_compb 	; Timer1 compare Handler
         rjmp 	TIM1_ovf 	; Timer1 Overflow Handler
-        rjmp 	TIM0_ovf 	; Timer0 Overflow Handler
+        rjmp 	TIM0_ovf	; Timer0 Overflow Handler
         rjmp 	SPI_stc 	; SPI Transfer Complete Handler
         rjmp 	UART_rxc 	; UART RX Complete Handler
         rjmp 	UART_udre 	; UDR Empty Handler
@@ -497,6 +498,7 @@ Init_white_INT1_1:
 	out 	EEARH,Tmp0		;Set EEPROM Address
 	sbi 	EECR,EERE
 	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	sts	ChildModeWord,Tmp0
 	cpi	Tmp0,DROWN_UP_MODE_CODE
 	brne	Init_Child_Mode
 	
@@ -509,22 +511,18 @@ Init_white_INT1_1:
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_320)
 	sts	SecondThreshOfMaxPressL,Tmp0
-	ldi	Tmp0,DROWN_UP_MODE_CODE
-	sts	ChildModeWord,Tmp0
 	rjmp	Init_error_check
 		
 Init_Child_Mode:
-	ldi 	Tmp0,HIGH(PRESSURE_195)
+	ldi 	Tmp0,HIGH(PRESSURE_200)
 	sts	FirstThreshOfMaxPressH,Tmp0
-	ldi	Tmp0,LOW(PRESSURE_195)
+	ldi	Tmp0,LOW(PRESSURE_200)
 	sts	FirstThreshOfMaxPressL,Tmp0
 
 	ldi 	Tmp0,HIGH(PRESSURE_210)
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_210)
 	sts	SecondThreshOfMaxPressL,Tmp0
-	ldi	Tmp0,CHILD_MODE_CODE
-	sts	ChildModeWord,Tmp0
 	
 Init_error_check:
 	sbi	PORTD,BIT_ERR0
@@ -687,8 +685,8 @@ Ext_int1:               ;Low battery
 	push 	Tmp0
 
 	;cbi	PORTC,BIT_INT3_OF_TMS
-	;cbi	PORTC,BIT_R_BR
-
+	cbi	PORTC,BIT_R_BR
+	sbi	PORTC,BIT_R_BR
 	sbr	SystemFlags,(1<<LOW_BATTERY_FLAG)
 	nop
 	nop
@@ -810,19 +808,15 @@ Timer2_ACTIVE_TMS_FLAG_check:
 	cp	LowBatteryTimer,Tmp0
 	breq	Timer2_quit_
 	
-	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
-	sbi	PORTC,BIT_GEN_STOP              ; GEN_STOP = 1
-	sbi	PORTC,BIT_R_BR                  ; R_BR = 1
-	ldi	Tmp0,TIM0_PRESCALER_256
-	out	TCCR0,Tmp0
-	ldi	Tmp0,TIM0_5_MS
-	out	TCNT0,Tmp0			; 20000 cycle
-	in	Tmp0,TIFR
-	andi	Tmp0,(1<<TOV0)
-	out     TIFR,Tmp0
-	in	Tmp0,TIMSK		;Enable Timer0 interrupts
-	ori  	Tmp0,(1<<TOIE0)
-	out	TIMSK,Tmp0	
+	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) 	; ACTIVE_TMS_FLAG = 1
+	sbi	PORTC,BIT_GEN_STOP              	; GEN_STOP = 1
+	sbi	PORTC,BIT_R_BR                  	; R_BR = 1
+	sbi	PORTC,BIT_CLK_STOP			; CLK_STOP = 1
+	ldi	Tmp0,WHITE_10_MKS
+Tim0_white_10_mks:
+	dec	Tmp0
+	brne	Tim0_white_10_mks
+	cbi	PORTC,BIT_RS_TMS_I	
 	rjmp	Timer2_quit
 
 Timer2_C5VA_question:
@@ -878,6 +872,30 @@ Timer2_quit:
 
 ;*******************************************************************
 TIM1_ovf: 	; Timer1 Overflow Handler
+	lds	Tmp0,BuzzerCounter0
+	dec	Tmp0
+	sts	BuzzerCounter0,Tmp0
+	cpi	Tmp0,0
+	brne	TIM1_buzz_is_enabled
+	lds	Tmp0,BuzzerCounter1
+	dec	Tmp0
+	sts	BuzzerCounter1,Tmp0
+	cpi	Tmp0,0
+	brne	TIM1_buzz_is_enabled
+	sbrs	InternalFlags,EXTERNAL_BUZZER_FLAG
+	rjmp	TIM1_buzz_is_enabled		
+TIM1_buzz_is_stopped:				; if EXTERNAL_BUZZER_FLAG=1
+	cbr	InternalFlags,(1<<EXTERNAL_BUZZER_FLAG)
+	cbi	PORTB,BIT_BUZZ_AV1
+	sbi	PORTB,BIT_BUZZ_AV2
+	ldi	Tmp0,0				; Timer1 disable
+	out	TCCR1B,Tmp0
+	in	Tmp0,TIMSK			; Disable Timer interrupts
+	andi  	Tmp0,~(1<<TOIE1)
+	out	TIMSK,Tmp0
+	reti
+	
+TIM1_buzz_is_enabled:
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
 	out	TCNT1L,Tmp0
 	ldi	Tmp0,HIGH(TIMER1_4_KHZ)
@@ -897,23 +915,6 @@ TIM1_buzz_av1_0:
 TIM0_ovf:		;Timer0 interrupt
 
 ;	push 	Tmp0
-
-	sbi	PORTC,BIT_CLK_STOP
-
-	ldi	Tmp0,WHITE_10_MKS
-Tim0_white_10_mks:
-	dec	Tmp0
-	brne	Tim0_white_10_mks
-
-	in	Tmp0,TIMSK		;Disable Timer0 interrupts
-	andi  	Tmp0,~(1<<TOIE0)
-	out	TIMSK,Tmp0
-	ldi	Tmp0,0
-	out 	TCCR0,Tmp0		;Stop Timer0
-	out	TCNT0,Tmp0
-
-	cbi	PORTC,BIT_RS_TMS_I
-
 ;	pop 	Tmp0
 	reti
 
@@ -962,7 +963,7 @@ SPI_jump_first_byte:
 	rjmp	SPI_set_time_command
 	rjmp	SPI_write_child_mode_command
 	rjmp	SPI_write_buffer_tms_command
-	rjmp	SPI_erroneous_command
+	rjmp	SPI_set_buzzer_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
@@ -1039,6 +1040,13 @@ SPI_write_buffer_tms_command:
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 	
+SPI_set_buzzer_command:	
+	ldi	Tmp1,0xBB
+	out	SPDR,Tmp1
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	
 SPI_erroneous_command:
 	rjmp	SPI_bad_command
 	
@@ -1066,7 +1074,7 @@ SPI_jump_second_byte:
 	rjmp	SPI_set_time
 	rjmp	SPI_write_child_mode
 	rjmp	SPI_write_buffer_tms
-	rjmp	SPI_erroneous
+	rjmp	SPI_set_buzzer
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
@@ -1131,8 +1139,8 @@ SPI_read_child_mode:
 SPI_read_buffer_tms:
 	cp	SPIByteCounter,Tmp1
 	breq	SPI_reading_buf_tms_is_finish
-	ldi	XL,LOW(SPISerialNumber+SIZE_BUFFER_FOR_TMS)
-	ldi	XH,HIGH(SPISerialNumber+SIZE_BUFFER_FOR_TMS)
+	ldi	XL,LOW(SPIBufferForTms+SIZE_BUFFER_FOR_TMS)
+	ldi	XH,HIGH(SPIBufferForTms+SIZE_BUFFER_FOR_TMS)
 	sub	XL,SPIByteCounter
 	sbc	XH,Tmp1
 	ld	Tmp0,X
@@ -1160,6 +1168,11 @@ SPI_set_time:
 SPI_write_child_mode:
 	in	Tmp0,SPDR
 	sts	ChildModeWord,Tmp0
+	cpi	Tmp0,DROWN_UP_MODE_CODE
+	breq	SPI_write_drown_up_mode
+	ldi	Tmp0,CHILD_MODE_CODE
+	sts	ChildModeWord,Tmp0
+SPI_write_drown_up_mode:	
 	sbi	EECR,EERIE	; Enable interrupt ready EEPROM
 	ldi	Tmp0,1
 	sts	EEPROMByteCounter,Tmp0
@@ -1168,13 +1181,31 @@ SPI_write_child_mode:
 
 SPI_write_buffer_tms:
 	in	Tmp0,SPDR
-	ldi	XL,LOW(SPINewSerialNumber+SIZE_BUFFER_FOR_TMS-1)
-	ldi	XH,HIGH(SPINewSerialNumber+SIZE_BUFFER_FOR_TMS-1)
+	ldi	XL,LOW(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
+	ldi	XH,HIGH(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
 	sub	XL,SPIByteCounter
 	sbc	XH,Tmp1
 	st	X,Tmp0
 	cpse	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+	
+SPI_set_buzzer:
+	in	Tmp0,SPDR
+	sts	BuzzerCounter1,Tmp0
+	sbr	InternalFlags,(1<<EXTERNAL_BUZZER_FLAG)
+	
+	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
+	out	TCNT1L,Tmp0
+	ldi	Tmp0,HIGH(TIMER1_4_KHZ)
+	out	TCNT1H,Tmp0
+	ldi	Tmp0,TIMER1_PRESCALE_8
+	out	TCCR1B,Tmp0
+	in	Tmp0,TIMSK		; Enable Timer1 interrupts
+	ori  	Tmp0,(1<<TOIE1)
+	out	TIMSK,Tmp0	
+	
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 	
@@ -1451,6 +1482,7 @@ Fatal_error_occur:
 	ori  	Tmp0,(1<<TOIE1)
 	out	TIMSK,Tmp0
 	
+	cbr	InternalFlags,(1<<EXTERNAL_BUZZER_FLAG)
 	;sbi     PORTD,BIT_INT3_OF_TMS
 	rjmp	ADC_quit
 
@@ -1462,20 +1494,12 @@ EE_rdy:   	; EEPROM Ready Handler
 	dec	Tmp3
 	brlo    EE_writing_EEPROM_is_finished
 	sts	EEPROMByteCounter,Tmp3
-
-	ldi	Tmp2,0
-	ldi	XL,LOW(SPINewSerialNumber+4)
-	ldi	XH,HIGH(SPINewSerialNumber+4)
-	sub	XL,Tmp3
-	sbc	XH,Tmp2
-
-	ldi 	Tmp0,LOW(SERIAL_NUMBER_ADDRESS+4)
-	ldi 	Tmp1,HIGH(SERIAL_NUMBER_ADDRESS+4)
-	sub	Tmp0,Tmp3
-	sbc	Tmp1,Tmp2
-	out 	EEARL,Tmp0		;Set EEPROM Address
-	out 	EEARH,Tmp1		;Set EEPROM Address
-	ld	Tmp2,X
+	
+	ldi 	ZL,LOW(CHILD_MODE_WORD_ADDRESS)
+	ldi 	ZH,HIGH(CHILD_MODE_WORD_ADDRESS)
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	lds	Tmp2,ChildModeWord
 	out 	EEDR,Tmp2		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
@@ -1488,10 +1512,11 @@ EE_writing_EEPROM_is_finished:
 
 	ldi 	ZL,LOW(CHILD_MODE_WORD_ADDRESS)
 	ldi 	ZH,HIGH(CHILD_MODE_WORD_ADDRESS)
-	out 	EEARL,ZL		;Set EEPROM Address
-	out 	EEARH,ZH		;Set EEPROM Address
+	out 	EEARL,ZL		; Set EEPROM Address
+	out 	EEARH,ZH		; Set EEPROM Address
 	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	in 	Tmp0,EEDR		; Tmp0 = EEPROM Value
+	cbi	EECR,EERIE		; Disable interrupt ready EEPROM
 	sts	ChildModeWord,Tmp0
 	cpi	Tmp0,DROWN_UP_MODE_CODE
 	brne	EE_Child_Mode
@@ -1508,9 +1533,9 @@ EE_writing_EEPROM_is_finished:
 	reti
 		
 EE_Child_Mode:
-	ldi 	Tmp0,HIGH(PRESSURE_195)
+	ldi 	Tmp0,HIGH(PRESSURE_200)
 	sts	FirstThreshOfMaxPressH,Tmp0
-	ldi	Tmp0,LOW(PRESSURE_195)
+	ldi	Tmp0,LOW(PRESSURE_200)
 	sts	FirstThreshOfMaxPressL,Tmp0
 
 	ldi 	Tmp0,HIGH(PRESSURE_210)
@@ -1518,7 +1543,6 @@ EE_Child_Mode:
 	ldi	Tmp0,LOW(PRESSURE_210)
 	sts	SecondThreshOfMaxPressL,Tmp0
 	
-	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
 	reti
 
 
