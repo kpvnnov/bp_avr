@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.33 2001-09-27 15:19:59 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.34 2001-12-14 12:53:44 peter Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -37,7 +37,7 @@
 ;  PB7(pin3) - SCK (SPI Bus Serial Clock)
 ;
 ;  PC0(pin19) - RS_TMS_I output
-;  PC1(pin20) - GEN_STOP output
+;  PC1(pin20) - WDI output
 ;  PC2(pin21) - CLK_STOP output
 ;  PC3(pin22) - INT3 (TMS) output - запрос обмена у TMS
 ;  PC4(pin23) - R_BR  output
@@ -45,7 +45,7 @@
 ;  PC6(pin25) - CRISTAL_32768 input
 ;  PC7(pin26) - CRISTAL_32768 output
 ;
-;  PD0(pin 9) -
+;  PD0(pin 9) - RX (UART input)
 ;  PD1(pin10) - TX (UART Output [ADC Value {2 bytes - LSB first}])
 ;  PD2(pin11) - INT0 - C+5va
 ;  PD3(pin12) - INT1 - INT1(TMS) - провал во вх. питанию
@@ -96,7 +96,7 @@
 	     	.equ	THIRTY_SECONDS_FLAG=3           ; 0
 	     	.equ	FATAL_ERROR_FLAG=4  		; 0
 		.equ	BAD_SHIFT_FLAG=5                ; 0
-		.equ	TEST_FLAG=6                     ; 0
+		.equ	UART_FLAG=6                     ; 0
 		.equ	KEY_IS_PRESSED=7		; 0
 	.def	ThirtySecondsTimer=r22
 	.def	Flag15mmTimer=r23
@@ -134,6 +134,8 @@
 	.equ	USBR_19_2=11
 	.equ	USBR_115=1
 	.equ	USB_TRANSMIT_ONLY=0b00001000
+	;.equ	USB_RECEIVE_ONLY=0b10010000
+	;.equ	USB_RX_INT_EN_TX_EN=0b10011000	
 
 	; FOR SPCR
 	.equ	SPCR_SPI_EN_I_EN=0b11000000
@@ -166,13 +168,11 @@
   		.equ	BIT_CLK_32768=5
 
 	.equ	IO_PIN_PORTC_FOR_RS=0b00111111
-	.equ	PORTC_FOR_TMS_RS_CLK_STOP=0b00011001
+	.equ	PORTC_FOR_TMS_RS_CLK_RUN=0b00011111
 	.equ	PORTC_FOR_TMS_RUN=0b00011110
-	.equ	PORTC_FOR_CLK_STOP=0b00001010
-	.equ	PORTC_FOR_GEN_STOP=0b00001001
-	.equ	PORTC_FOR_GEN_RUN=0b00011011
 
 	; Port D
+		.equ	BIT_RX_UART=0
 		.equ	BIT_C_5VA=2
   		.equ	BIT_LOW_BATTERY=3
   		.equ	BIT_VALVE21=4
@@ -200,9 +200,16 @@
 	.equ	BuzzerCounter0=0x6E
 	.equ	BuzzerCounter1=0x6F
 	.equ	StatusIsSaved=0x70
-	.equ	SPINewTime=0x72			; 3-ть байт
-	.equ	SPIBufferForTms=0x80		; 64-ть байт
-
+	.equ	SPIWhiteTimer=0x71
+	.equ	SPINewTime=0x72			; 3-и байта
+	.equ	CheckVariablesBuffer=0x80	; 15-ть байт
+	.equ	SPIBufferForTms=0x90		; 8-мь байт
+	.equ	SPIBuffer=0xA0			; 15-ть байт
+	
+	.equ	CHECK_VARIABLES_BUFFER_SIZE=15
+	.equ	SIZE_BUFFER_FOR_TMS=7
+	.equ	SIZE_SPI_BUFFER=15-1	; -1 потому что 
+					; первый байт посылаем сразу
 	;EEPROM
 	.equ	FATAL_ERROR_ADDRESS=0
 	.equ	ERR_INT_ADDRESS=1
@@ -227,7 +234,7 @@
 	.equ	SECOND_15=60
 	.equ	THREE_SECOND=12
 	.equ    THIRTY_SECONDS=120
-	.equ	TWO_MINUTES=130			;120,118 !!!!!!!!!!!!!!!!!!!!!!
+	.equ	TWO_MINUTES=125			; 120 / 118 !!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
 	.equ    TWO_HOURS=120
 	.equ	THREE_MINUTES=3
@@ -235,7 +242,9 @@
 
 	.equ	WHITE_10_MKS=12
 	.equ	WHITE_30_MKS=40
+	.equ	WHITE_100_MKS=150
 	.equ	WHITE_8_MKS=10
+	.equ	WHITE_2_MKS=2	
 	.equ	TIM0_1_MS=239		 	; 255-16  prescaler=256
 	.equ	TIM0_5_MS=175              	; 255-80  prescaler=256
 	.equ    TIMER1_4_KHZ=0x0FF8D		; 0x0FFFF-((250*3.6468)/8)
@@ -245,7 +254,7 @@
 	.equ	FATAL_ERROR_295=1
 	.equ	FATAL_ERROR_315=2
 	.equ	C5VA_ERROR=4
-	.equ	NOT_FATAL_ERROR=0x0FF
+	.equ	NOT_FATAL_ERROR=0x0EE
 
 	.equ	PRE_SECOND_INITIAL_VALUE=4
 	.equ    SECOND_COUNTER_MAX_VALUE=60
@@ -253,8 +262,21 @@
 	.equ    HOURS_COUNTER_MAX_VALUE=24
 	.equ    MAX_LOW_BATTERY_TIMER=20
 
-	.equ	SIZE_BUFFER_FOR_TMS=7
-
+;BYTE_NUMBER mast be even.
+	.equ	SYSTEM_STATE_BYTE_NUMBER=4
+	.equ	TMS_POWERDOWN_BYTE_NUMBER=2
+	.equ	READ_TIME_BYTE_NUMBER=6
+	.equ	SEND_ACKNOW_BYTE_NUMBER=2	
+	.equ	READ_FATAL_ERROR_BYTE_NUMBER=2
+	.equ	READ_BUFFER_TMS_BYTE_NUMBER=SIZE_BUFFER_FOR_TMS+1
+	.equ	SET_TIME_BYTE_NUMBER=4
+	.equ	WRITE_CHILD_MODE_BYTE_NUMBER=2
+	.equ	WRITE_BUFFER_TMS_BYTE_NUMBER=SIZE_BUFFER_FOR_TMS+1
+	.equ	SET_BUZZER_BYTE_NUMBER=2
+	.equ	READ_VARIABLE_AVR_BYTE_NUMBER=CHECK_VARIABLES_BUFFER_SIZE+1
+	.equ	READ_VERSION_BYTE_NUMBER=80
+	.equ	ERROR_COMMAND_BYTE_NUMBER=2	
+			
 ;********************************************************************
 ; Interrupts vectors
 ;********************************************************************
@@ -276,7 +298,11 @@
         rjmp 	ADC_int  	; ADC Conversion Complete Interrupt Handler
         rjmp 	EE_rdy   	; EEPROM Ready Handler
         rjmp 	ANA_comp 	; Analog Comparator Handler
-
+;********************************************************************
+;*       Program_version
+;********************************************************************        
+Program_version:
+	.db 	"$Revision: 1.34 $ $Date: 2001-12-14 12:53:44 $"
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -304,7 +330,7 @@ TIM1_compb: 	; Timer1 compare Handler
 UART_rxc: 	; UART RX Complete Handler
 	cli
 	ldi 	Tmp1,0x07
-	rjmp	Int_error
+	rjmp	Int_error	
 UART_udre: 	; UDR Empty Handler
 	cli
 	ldi 	Tmp1,0x08
@@ -375,7 +401,7 @@ Init_zero1:
 
 	ldi 	Tmp0,IO_PIN_PORTC_FOR_RS
 	out 	DDRC,Tmp0
-	ldi 	Tmp0,PORTC_FOR_TMS_RS_CLK_STOP
+	ldi 	Tmp0,PORTC_FOR_TMS_RS_CLK_RUN
 	out 	PORTC,Tmp0
 
 	ldi 	Tmp0,IO_PIN_PORTD_FOR_RS
@@ -399,20 +425,19 @@ Wait_update_assr:
 	ldi	Tmp0,SPCR_SPI_EN_I_EN	;SPI initialyzation
 	out	SPCR,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-
-
-	ldi	Tmp2,0x0FF
-Wiat00:
-	ldi	Tmp1,1<<BIT_WDI
+	
+	ldi	Tmp3,0xFF
+Init_white_1:
+	ldi	Tmp1,1<<BIT_WDI	
 	in	Tmp0,PORTC
 	eor	Tmp0,Tmp1
 	out	PORTC,Tmp0
-	dec	Tmp2
-	brne	Wiat00
-
-
+	nop
+	wdr
+	dec	Tmp3
+	brne    Init_white_INT1_1
+	rjmp    Init_white_1
 Init_white_INT1_1:
-	ldi	Tmp1,1<<BIT_WDI
 	in	Tmp0,PORTC
 	eor	Tmp0,Tmp1
 	out	PORTC,Tmp0
@@ -420,15 +445,18 @@ Init_white_INT1_1:
 	wdr
 	sbis    PIND,BIT_LOW_BATTERY
 	rjmp    Init_white_INT1_1
-
-	ldi 	Tmp0,USBR_115		;11 - 19200 bps [3.6864 MHz]
+	
+	ldi 	Tmp0,PORTC_FOR_TMS_RUN
+	out 	PORTC,Tmp0
+	
+	ldi 	Tmp0,USBR_115		;1 - 115200 bps [3.6864 MHz]
 	out 	UBRR,Tmp0
 	ldi 	Tmp0,USB_TRANSMIT_ONLY
 	out 	UCR,Tmp0
 	out	UDR,Tmp0
 
 	ori 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	;ori	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
+	ori	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
 	sbr	InternalFlags,(1<<LAST_STAT_C5VA)
 
 	ldi     Tmp0,TWO_MINUTES
@@ -488,12 +516,12 @@ Init_Child_Mode:
 	sts	ChildModeWord,Tmp0
 	
 Init_error_check:
-	sbi	PORTD,BIT_ERR0
-	sbi	PORTD,BIT_ERR1
+	;sbi	PORTD,BIT_ERR0
+	;sbi	PORTD,BIT_ERR1
 	;	cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
 	;	cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
-		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
-		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+	;	cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+	;	cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 
 	;Read Fatal error from EEPROM and write to PORTD
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -504,10 +532,10 @@ Init_error_check:
 	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
 	sts	FatalError,Tmp0
 
-	sbrs	Tmp0,0
-	cbi	PORTD,BIT_ERR0
-	sbrs	Tmp0,1
-	cbi	PORTD,BIT_ERR1
+	;sbrs	Tmp0,0
+	;cbi	PORTD,BIT_ERR0
+	;sbrs	Tmp0,1
+	;cbi	PORTD,BIT_ERR1
 
 	cpi	Tmp0,NOT_FATAL_ERROR
 	brne	Fatal_error_was 	;If was Fatal Error.
@@ -578,10 +606,9 @@ Wait_key_2:
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp0
 	cbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
-	;sbr	SystemFlags,1<<TEST_FLAG
 
-	sbi	PORTD,BIT_ERR0
-	sbi	PORTD,BIT_ERR1
+	;sbi	PORTD,BIT_ERR0
+	;sbi	PORTD,BIT_ERR1
 
 	rjmp 	Idle_mode_start
 
@@ -611,9 +638,9 @@ Wait_update_assr2:
 	sleep
 	nop
 	nop
-	nop
-	nop
-
+;	nop
+;	nop
+;
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 	nop
@@ -625,8 +652,6 @@ Wait_update_assr2:
 ;*****
 
 Idle_mode_start:
-
-
 	sbic	PINB,BIT_SPI_SS
 	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
 
@@ -636,10 +661,43 @@ Idle_mode_start:
 	sei
 	sleep
 	nop
+	nop	
 	nop
+	
+Idle_mode_white:
+	sei
+	ldi	Tmp0,255
+Idle_mode_white_2:	
+	sbic	PINB,BIT_SPI_SS
+	rjmp	Idle_mode_check_ss
+	dec	Tmp0
+	brne	Idle_mode_white_2
 	nop
-
-;	nop
+	
+	ldi	Tmp0,255
+Idle_mode_white_3:	
+	sbic	PINB,BIT_SPI_SS
+	rjmp	Idle_mode_check_ss
+	dec	Tmp0
+	brne	Idle_mode_white_3
+	nop
+		
+	cli
+	lds	Tmp0,SPIWhiteTimer
+	dec	Tmp0
+	sts	SPIWhiteTimer,Tmp0
+	cpi	Tmp0,0
+	brne	Idle_mode_check_ss
+	ldi	Tmp0,255
+	sts	SPIWhiteTimer,Tmp0
+	nop				; Время ожидания конца обмена по SPI > 64 ms
+Idle_mode_check_ss:
+	cli
+	sbis	PINB,BIT_SPI_SS
+	rjmp	Idle_mode_white
+	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
+	ldi	Tmp0,255
+	sts	SPIWhiteTimer,Tmp0
 
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -670,12 +728,16 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 
 	wdr     ; Watchdog reset
 		; System watch
+	cbi     PORTC,BIT_WDI
 	
-	ldi	Tmp1,1<<BIT_WDI
-	in	Tmp0,PORTC
-	eor	Tmp0,Tmp1
-	out	PORTC,Tmp0
-
+	sbic    PIND,BIT_RX_UART		
+	sbr	SystemFlags,(1<<UART_FLAG)
+	
+;	ldi	Tmp1,1<<BIT_WDI
+;	in	Tmp0,PORTC
+;	eor	Tmp0,Tmp1
+;	out	PORTC,Tmp0
+TIM2_C_5VA_check:
 	in	Tmp2,PIND
 	sbrs	Tmp2,BIT_C_5VA
 	rjmp	TIM2_change_flag
@@ -702,6 +764,15 @@ TIM2_change_flag:
 	sbr  	SystemFlags,(1<<SECOND_FLAG)
 	sbi     PORTC,BIT_R_BR			; Отпустить R_BR
 
+	ldi	Tmp0,0
+	cp	LowBatteryTimer,Tmp0
+	breq	Timer2_second_inc
+	
+	push	Tmp3	
+	rcall	Tms_to_active
+	pop	Tmp3
+	
+Timer2_second_inc:	
 	ldi	Tmp1,1<<BIT_CLK_32768
 	in	Tmp0,PORTC
 	eor	Tmp0,Tmp1
@@ -772,8 +843,6 @@ Timer2_key_1:
 	cpi	ThirtySecondsTimer,0
 	breq    Timer2_zero_to_30SecTime
 	dec     ThirtySecondsTimer
-	;sbrc	SystemFlags,TEST_FLAG
-	;rjmp    Timer2_zero_to_30SecTime
 	sbic	PIND,BIT_C_5VA
 	rjmp    Timer2_FATAL_ERROR_FLAG_check
 	cbi     PORTC,BIT_R_BR 				; Impulse R_BR
@@ -784,31 +853,13 @@ Timer2_zero_to_30SecTime:
 	cbr	SystemFlags,(1<<THIRTY_SECONDS_FLAG)
 
 Timer2_FATAL_ERROR_FLAG_check:
-	;sbrs	SystemFlags,TEST_FLAG
 	sbrs	SystemFlags,FATAL_ERROR_FLAG
 	rjmp	Timer2_ACTIVE_TMS_FLAG_check
 	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
 	
 Timer2_ACTIVE_TMS_FLAG_check:
-	sbrc	InternalFlags,ACTIVE_TMS_FLAG
-	rjmp	Timer2_C5VA_question
-
-	sbrs    SystemFlags,SECOND_FLAG
-	rjmp	Timer2_quit
-
-	ldi	Tmp0,0
-	cp	LowBatteryTimer,Tmp0
-	breq	Timer2_quit_
-
-	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) 	; ACTIVE_TMS_FLAG = 1
-	sbi	PORTC,BIT_R_BR                  	; R_BR = 1
-	sbi	PORTC,BIT_CLK_STOP			; CLK_STOP = 1
-	ldi	Tmp0,WHITE_10_MKS
-Tim0_white_10_mks:
-	dec	Tmp0
-	brne	Tim0_white_10_mks
-	cbi	PORTC,BIT_RS_TMS_I
-	rjmp	Timer2_quit
+	sbrs	InternalFlags,ACTIVE_TMS_FLAG
+	rjmp	Timer2_quit_
 
 Timer2_C5VA_question:
 	sbic	PIND,BIT_C_5VA
@@ -818,9 +869,6 @@ Timer2_C5VA_question:
 	brne    Timer2_bit_c5va_0
 	ldi	Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
-
-	;sbrc	SystemFlags,TEST_FLAG	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	;rjmp    Timer2_bit_c5va_0
 
 	ldi 	Tmp1,C5VA_ERROR
 	rjmp	Fatal_error_occur
@@ -860,6 +908,7 @@ Timer2_bit_c5va_1:
 	mov	TwoMinutesTimer,Tmp0
 
 Timer2_quit:
+	sbi     PORTC,BIT_WDI
 	reti
 
 ;*******************************************************************
@@ -911,21 +960,23 @@ TIM0_ovf:		;Timer0 interrupt
 	reti
 
 ;*******************************************************************
+
 SPI_stc: 	; SPI Transfer Complete Handler
 
 		;sbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	;	in	Tmp0,SPSR			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	nop
+	in	Tmp0,SPDR
 	sbrs	InternalFlags,FIRST_BYTE_OF_SPI
 	rjmp	SPI_second_byte
-	in	Tmp0,SPDR
 	mov     Tmp1,Tmp0
 	swap	Tmp1
 	eor	Tmp1,Tmp0
 	breq	SPI_good_command
 SPI_bad_command:
-	ldi	Tmp1,0x0EE	;0x0FF
+SPI_erroneous_command:
+	ldi	Tmp1,0x0F0		;was 0xEE
 	out	SPDR,Tmp1
-	ldi	Tmp1,1
+	ldi	Tmp1,ERROR_COMMAND_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	ldi    	Tmp0,0x0F
 	mov	SPICommand,Tmp0
@@ -951,40 +1002,50 @@ SPI_jump_first_byte:
 	rjmp	SPI_read_fatal_error_command
 	rjmp	SPI_read_buffer_tms_command
 	rjmp	SPI_erroneous_command
-	rjmp	SPI_set_test_flag_command
+	rjmp	SPI_erroneous_command
 	rjmp	SPI_set_time_command
 	rjmp	SPI_write_child_mode_command
 	rjmp	SPI_write_buffer_tms_command
 	rjmp	SPI_set_buzzer_command
-	rjmp	SPI_erroneous_command
-	rjmp	SPI_erroneous_command
+	rjmp	SPI_read_variable_command
+	rjmp	SPI_read_version_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
 
 SPI_system_stat_command:
 	out	SPDR,SystemFlags
-	sts	StatusIsSaved,SystemFlags
-	ldi	Tmp1,3
+	sts	SPIBuffer+SIZE_SPI_BUFFER-1,SystemFlags
+	lds	Tmp0,ChildModeWord
+	sts	SPIBuffer+SIZE_SPI_BUFFER-2,Tmp0
+	ldi	Tmp1,SYSTEM_STATE_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
+	cbr	SystemFlags,(1<<UART_FLAG)
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown_command:
-	ldi	Tmp1,0x11
+	ldi	Tmp1,0xEE
 	out	SPDR,Tmp1
-	ldi	Tmp1,1
+	ldi	Tmp1,TMS_POWERDOWN_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_read_time_command:
-	out	SPDR,SecondsCounter
-	ldi	Tmp1,3
+	ldi	Tmp0,TWO_MINUTES
+	sub	Tmp0,TwoMinutesTimer
+	out	SPDR,Tmp0
+	ldi	Tmp0,0xEE
+	sts	SPIBuffer+SIZE_SPI_BUFFER-1,Tmp0
+	sts	SPIBuffer+SIZE_SPI_BUFFER-2,HoursCounter
+	sts	SPIBuffer+SIZE_SPI_BUFFER-3,MinutesCounter
+	sts	SPIBuffer+SIZE_SPI_BUFFER-4,SecondsCounter
+	ldi	Tmp1,READ_TIME_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_send_acknowledge_command:
-	ldi	Tmp1,0x33
+	ldi	Tmp1,0xEE
 	out	SPDR,Tmp1
-	ldi	Tmp1,1
+	ldi	Tmp1,SEND_ACKNOW_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	ldi	Tmp1,0xFF
 	lds	Tmp0,StatusIsSaved
@@ -996,55 +1057,72 @@ SPI_send_acknowledge_command:
 SPI_read_fatal_error_command:
 	lds	Tmp0,FatalError
 	out	SPDR,Tmp0
-	ldi	Tmp1,1
+	ldi	Tmp1,READ_FATAL_ERROR_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_read_buffer_tms_command:
-	ldi	Tmp1,0x55
+	lds	Tmp1,SPIBufferForTms
 	out	SPDR,Tmp1
-	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
+	ldi	Tmp1,READ_BUFFER_TMS_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
-	rjmp	SPI_quit
-
-SPI_set_test_flag_command:
-	ldi	Tmp1,0x77
-	out	SPDR,Tmp1
-	ldi	Tmp1,1
-	mov 	SPIByteCounter,Tmp1
-	;sbr	SystemFlags,1<<TEST_FLAG
 	rjmp	SPI_quit
 
 SPI_set_time_command:
 	ldi	Tmp1,0x88
 	out	SPDR,Tmp1
-	ldi	Tmp1,3
+	ldi	Tmp1,SET_TIME_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_write_child_mode_command:
 	ldi	Tmp1,0x99
 	out	SPDR,Tmp1
-	ldi	Tmp1,1
+	ldi	Tmp1,WRITE_CHILD_MODE_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_write_buffer_tms_command:
 	ldi	Tmp1,0xAA
 	out	SPDR,Tmp1
-	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
+	ldi	Tmp1,WRITE_BUFFER_TMS_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
 SPI_set_buzzer_command:
 	ldi	Tmp1,0xBB
 	out	SPDR,Tmp1
-	ldi	Tmp1,1
+	ldi	Tmp1,SET_BUZZER_BYTE_NUMBER-1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
-SPI_erroneous_command:
-	rjmp	SPI_bad_command
+SPI_read_variable_command:
+	ldi	Tmp0,TWO_MINUTES
+	sub	Tmp0,TwoMinutesTimer
+	out	SPDR,Tmp0
+	sts	SPIBuffer+8,HoursCounter
+	sts	SPIBuffer+7,MinutesCounter
+	sts	SPIBuffer+6,SecondsCounter
+	sts	SPIBuffer+5,ADCShiftPr2
+	sts	SPIBuffer+4,ADCShiftPr0	
+	sts	SPIBuffer+3,ADC_L_pr2
+	sts	SPIBuffer+2,ADC_H_pr2
+	sts	SPIBuffer+1,ADC_L_pr0
+	sts	SPIBuffer+0,ADC_H_pr0
+	ldi	Tmp1,READ_VARIABLE_AVR_BYTE_NUMBER-1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	
+SPI_read_version_command:
+	mov	Tmp0,r0
+	ldi	ZL,LOW(Program_version*2)
+	ldi	ZH,HIGH(Program_version*2)
+	lpm
+	out	SPDR,r0
+	mov	r0,Tmp0
+	ldi	Tmp1,READ_VERSION_BYTE_NUMBER-1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
 
 
 SPI_second_byte:
@@ -1064,103 +1142,59 @@ SPI_jump_second_byte:
 	rjmp	SPI_read_fatal_error
 	rjmp	SPI_read_buffer_tms
 	rjmp	SPI_erroneous
-	rjmp	SPI_set_test_flag
+	rjmp	SPI_erroneous
 	rjmp	SPI_set_time
 	rjmp	SPI_write_child_mode
 	rjmp	SPI_write_buffer_tms
 	rjmp	SPI_set_buzzer
-	rjmp	SPI_erroneous
-	rjmp	SPI_erroneous
+	rjmp	SPI_read_variable
+	rjmp	SPI_read_version
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
 
 SPI_system_stat:
-	ldi	r30,LOW(SPI_system_stat_next_byte)
-	ldi	r31,HIGH(SPI_system_stat_next_byte)
-	add	r30,SPIByteCounter
-	adc	r31,Tmp1
-	ijmp
-SPI_system_stat_next_byte:
-	rjmp	SPI_system_stat_end
-	rjmp	SPI_system_stat_word_2
-	rjmp	SPI_system_stat_child_mode
-SPI_system_stat_end:
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
-SPI_system_stat_word_2:
-	lds	Tmp0,StatusIsSaved
-	out	SPDR,Tmp0
-	rjmp	SPI_quit
-SPI_system_stat_child_mode:
-	lds	Tmp0,ChildModeWord
-	out	SPDR,Tmp0
-	;out	UDR,Tmp0	
-	rjmp	SPI_quit
-
-SPI_read_fatal_error:
-		;cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
-SPI_set_test_flag:
-SPI_erroneous:
-	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
-
-SPI_TMS_powerdown:
-		;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
-	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
-	ldi	Tmp0,WHITE_30_MKS
-SPI_wait_30_mks:
-	dec	Tmp0
-	brne	SPI_wait_30_mks
-	cbi	PORTC,BIT_CLK_STOP			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	ldi	Tmp0,WHITE_8_MKS
-SPI_wait_8_mks:
-	dec	Tmp0
-	brne	SPI_wait_8_mks
-	sbi	PORTC,BIT_RS_TMS_I			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
-
 SPI_read_time_next_byte:
-	ldi	r30,LOW(SPI_read_time)
-	ldi	r31,HIGH(SPI_read_time)
-	add	r30,SPIByteCounter
-	adc	r31,Tmp1
-	ijmp
-SPI_read_time:
-	rjmp	SPI_read_time_end
-	rjmp	SPI_read_time_hours_byte
-	rjmp	SPI_read_time_minutes_byte
-SPI_read_time_end:
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
-SPI_read_time_hours_byte:
-	out	SPDR,HoursCounter
-	rjmp	SPI_quit
-SPI_read_time_minutes_byte:
-	out	SPDR,MinutesCounter
-	rjmp	SPI_quit
-
-SPI_send_acknowledgement:
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
-
-SPI_read_buffer_tms:
+SPI_read_variable:
 	cp	SPIByteCounter,Tmp1
-	breq	SPI_reading_buf_tms_is_finish
-	ldi	XL,LOW(SPIBufferForTms+SIZE_BUFFER_FOR_TMS)
-	ldi	XH,HIGH(SPIBufferForTms+SIZE_BUFFER_FOR_TMS)
+	breq	SPI_quit_and_flag_is_set_up_0
+	ldi	XL,LOW(SPIBuffer+SIZE_SPI_BUFFER)
+	ldi	XH,HIGH(SPIBuffer+SIZE_SPI_BUFFER)
 	sub	XL,SPIByteCounter
 	sbc	XH,Tmp1
 	ld	Tmp0,X
 	out	SPDR,Tmp0
 	rjmp	SPI_quit
-SPI_reading_buf_tms_is_finish:
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+SPI_quit_and_flag_is_set_up_0:
+	rjmp	SPI_quit_and_flag_is_set_up
+	
+SPI_TMS_powerdown:
+		;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
+	ldi	Tmp0,WHITE_100_MKS
+SPI_wait_100_mks:
+	dec	Tmp0
+	brne	SPI_wait_100_mks
+	cbi	PORTC,BIT_CLK_STOP			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+;	ldi	Tmp0,WHITE_8_MKS
+;SPI_wait_8_mks:
+;	dec	Tmp0
+;	brne	SPI_wait_8_mks
+;	sbi	PORTC,BIT_RS_TMS_I			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	rjmp	SPI_quit_and_flag_is_set_up
+
+SPI_read_buffer_tms:
+	cp	SPIByteCounter,Tmp1
+	breq	SPI_quit_and_flag_is_set_up_0
+	ldi	XL,LOW(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
+	ldi	XH,HIGH(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
+	sub	XL,SPIByteCounter
+	sbc	XH,Tmp1
+	ld	Tmp0,X
+	out	SPDR,Tmp0
 	rjmp	SPI_quit
 
 SPI_set_time:
-	in	Tmp0,SPDR
 	ldi	YL,LOW(SPINewTime+2)
 	ldi	YH,HIGH(SPINewTime+2)
 	sub	YL,SPIByteCounter
@@ -1171,11 +1205,9 @@ SPI_set_time:
 	ld	HoursCounter,Y
 	ld	MinutesCounter,-Y
 	ld	SecondsCounter,-Y
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
+	rjmp	SPI_quit_and_flag_is_set_up
 
 SPI_write_child_mode:
-	in	Tmp0,SPDR
 	sts	ChildModeWord,Tmp0
 	cpi	Tmp0,DROWN_UP_MODE_CODE
 	breq	SPI_write_drown_up_mode
@@ -1185,11 +1217,9 @@ SPI_write_drown_up_mode:
 	sbi	EECR,EERIE	; Enable interrupt ready EEPROM
 	ldi	Tmp0,1
 	sts	EEPROMByteCounter,Tmp0
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
-	rjmp	SPI_quit
+	rjmp	SPI_quit_and_flag_is_set_up
 
 SPI_write_buffer_tms:
-	in	Tmp0,SPDR
 	ldi	XL,LOW(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
 	ldi	XH,HIGH(SPIBufferForTms+SIZE_BUFFER_FOR_TMS-1)
 	sub	XL,SPIByteCounter
@@ -1197,15 +1227,13 @@ SPI_write_buffer_tms:
 	st	X,Tmp0
 	cpse	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 		;ldi	Tmp1,1<<BIT_ERR1		;!!!!!!!!!!!!!!!!!!
 		;in	Tmp0,PORTD			;!!!!!!!!!!!!!!!!!!
 		;eor	Tmp0,Tmp1			;!!!!!!!!!!!!!!!!!!
 		;out	PORTD,Tmp0			;!!!!!!!!!!!!!!!!!!
-	rjmp	SPI_quit
+	rjmp	SPI_quit_and_flag_is_set_up
 
 SPI_set_buzzer:
-	in	Tmp0,SPDR
 	sts	BuzzerCounter1,Tmp0
 	sbr	InternalFlags,(1<<EXTERNAL_BUZZER_FLAG)
 
@@ -1218,13 +1246,58 @@ SPI_set_buzzer:
 	in	Tmp0,TIMSK		; Enable Timer1 interrupts
 	ori  	Tmp0,(1<<TOIE1)
 	out	TIMSK,Tmp0
-
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit_and_flag_is_set_up
+	
+SPI_read_version:
+	cp	SPIByteCounter,Tmp1
+	breq	SPI_quit_and_flag_is_set_up	
+	mov	Tmp0,r0
+	ldi	ZL,LOW(Program_version*2+READ_VERSION_BYTE_NUMBER-1)
+	ldi	ZH,HIGH(Program_version*2+READ_VERSION_BYTE_NUMBER-1)
+	sub	ZL,SPIByteCounter
+	sbc	ZH,Tmp1
+	lpm
+	out	SPDR,r0
+	mov	r0,Tmp0
 	rjmp	SPI_quit
-
+	
+SPI_erroneous:
+	sbic	PINB,BIT_SPI_SS
+	rjmp	SPI_quit_and_flag_is_set_up
+	ldi	Tmp1,0x0F0
+	out	SPDR,Tmp1
+	rjmp	SPI_quit
+SPI_read_fatal_error:
+		;cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+SPI_send_acknowledgement:
+SPI_quit_and_flag_is_set_up:
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 SPI_quit:
+	ldi	Tmp0,WHITE_10_MKS*2
+SPI_quit_white:
 	reti
 
+;********************************************************************
+Tms_to_active:
+	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) 	; ACTIVE_TMS_FLAG = 1	
+	sbi	PORTC,BIT_CLK_STOP			; CLK_STOP = 1
+	ldi	Tmp0,WHITE_10_MKS
+Tms_to_active_white_1:
+	dec	Tmp0
+	brne	Tms_to_active_white_1
+	cbi	PORTC,BIT_RS_TMS_I
+	ldi	Tmp0,WHITE_8_MKS
+Tms_to_active_white_2:
+	dec	Tmp0
+	brne	Tms_to_active_white_2
+	cbi     PORTC,BIT_INT3_OF_TMS
+	ldi	Tmp0,WHITE_2_MKS
+Tms_to_active_white_3:
+	dec	Tmp0
+	brne	Tms_to_active_white_3
+	sbi     PORTC,BIT_INT3_OF_TMS
+	ret
+	
 ;********************************************************************
 ADC_int:
 
@@ -1318,8 +1391,6 @@ Two_minutes_check:
 	cpi     Tmp0,0
 	brne	Press_more_295_check
 	;Write EEPROM
-	;sbrc	SystemFlags,TEST_FLAG
-	;rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_2S
 	rjmp	Fatal_error_occur
 
@@ -1356,8 +1427,6 @@ Press_more_295_check:
 	;Write EEPROM
 	ldi	Tmp0,0
 	sts	Pressure320Timer,Tmp0
-	;sbrc	SystemFlags,TEST_FLAG
-	;rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_315
 	rjmp	Fatal_error_occur
 
@@ -1368,8 +1437,6 @@ Pressure_more_295:
 	;Write EEPROM
 	ldi	Tmp0,0
 	sts	Pressure295Timer,Tmp0
-	;sbrc	SystemFlags,TEST_FLAG
-	;rjmp    ADC_quit
 	ldi 	Tmp1,FATAL_ERROR_295
 	rjmp	Fatal_error_occur
 
@@ -1478,8 +1545,6 @@ Calc_shift_flag_reset:
 Fatal_error_occur:
 	sbrc	SystemFlags,FATAL_ERROR_FLAG
 	rjmp	ADC_quit
-	;sbrc	SystemFlags,TEST_FLAG
-	;rjmp	ADC_quit
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
 	out 	EEARL,Tmp0		;Set EEPROM Address
 	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
@@ -1489,14 +1554,13 @@ Fatal_error_occur:
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp1
 
-	sbrs	Tmp1,0
-	cbi	PORTD,BIT_ERR0
-	sbrs	Tmp1,1
-	cbi	PORTD,BIT_ERR1
+	;sbrs	Tmp1,0
+	;cbi	PORTD,BIT_ERR0
+	;sbrs	Tmp1,1
+	;cbi	PORTD,BIT_ERR1
 
 	cbi	PORTC,BIT_R_BR
 
-;	cbi     PORTC,BIT_INT3_OF_TMS
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
@@ -1510,10 +1574,8 @@ Fatal_error_occur:
 	out	TIMSK,Tmp0
 
 	cbr	InternalFlags,(1<<EXTERNAL_BUZZER_FLAG)
-	;sbi     PORTD,BIT_INT3_OF_TMS
 	rjmp	ADC_quit
-
-
+	
 ;***********************
 EE_rdy:   	; EEPROM Ready Handler
 	cli
@@ -1577,10 +1639,7 @@ EE_Child_Mode:
 	sts	ChildModeWord,Tmp0
 EE_quit:
 	reti
-
-
-
-
+	.db	"01234567890"
 
 
 
