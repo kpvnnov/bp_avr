@@ -113,8 +113,6 @@
 	.equ	WATCHDOG_RS2=0b00010111
 
 	; for TIMSK
-	.equ	TIM2_OV_EN=0b01000000
-	.equ	TIM0_OV_EN=0b00000001
 
 	; Timers
 	; for TCCR0
@@ -130,6 +128,9 @@
 
 	.equ	USBR_19_2=11
 	.equ	USB_TRANSMIT_ONLY=0b00001000
+	
+	; FOR SPCR
+	.equ	SPCR_SPI_EN_I_EN=0b11000000
 
 	; Port A
   		.equ	BIT_PRESSURE_CH_2=1
@@ -346,8 +347,6 @@ Power_down_mode:
 	out 	ASSR,Tmp0		;Asynchronous operation of timer2
 Wait_update_assr0:	
 	in	Tmp0,ASSR
-		cbi	PORTD,BIT_ERR1
-		sbi	PORTD,BIT_ERR1
 	andi	Tmp0,((1<<TCN2UB)|(1<<TCR2UB))
 	brne	Wait_update_assr0
 	ldi	Tmp0,TIM2_PRESCALER_32
@@ -372,15 +371,6 @@ Init_start:
 	ldi 	Tmp1,WATCHDOG_RS2	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	out	WDTCR,Tmp0		
 	out	WDTCR,Tmp1		;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	
-	ldi	Tmp1,0x0FF
-Wiat01:	
-	ldi	Tmp0,0x0FF
-Wiat00:	
-	dec	Tmp0
-	brne	Wiat00
-	dec	Tmp1
-	brne	Wiat01
 	
 	ldi 	Tmp0,LOW(RAMEND)
 	out 	SPL,Tmp0			;Stack Pointer
@@ -411,14 +401,31 @@ Wiat00:
 	out 	ASSR,Tmp0		;Asynchronous operation of timer2
 Wait_update_assr:	
 	in	Tmp0,ASSR
-		cbi	PORTD,BIT_ERR1
-		sbi	PORTD,BIT_ERR1
 	andi	Tmp0,((1<<TCN2UB)|(1<<TCR2UB))
 	brne	Wait_update_assr
 	ldi	Tmp0,TIM2_PRESCALER_32
 	out 	TCCR2,Tmp0		;Timer2 0,25 сек
+
+	ldi 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
+	out 	TIMSK,Tmp0		;Time interrupts disable!
 	
-		
+	in	Tmp0,SPSR
+	ldi	Tmp0,SPCR_SPI_EN_I_EN	;SPI initialyzation
+	out	SPCR,Tmp0
+	
+	ldi	Tmp2,0x007
+Wiat02:		
+	ldi	Tmp1,0x0FF
+Wiat01:	
+	ldi	Tmp0,0x0FF
+Wiat00:	
+	dec	Tmp0
+	brne	Wiat00
+	dec	Tmp1
+	brne	Wiat01
+	dec	Tmp2
+	brne	Wiat02
+			
 Init_white_INT1_1:
 	nop
 	wdr
@@ -433,9 +440,6 @@ Init_white_INT1_1:
 	ldi 	Tmp0,USB_TRANSMIT_ONLY
 	out 	UCR,Tmp0
 	out	UDR,Tmp0
-
-;	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
-;	out 	MCUCR,Tmp0
 
 	clr 	InternalFlags
 	clr 	SystemFlags
@@ -463,6 +467,11 @@ Init_white_INT1_1:
 	mov	MeasurementFlagTimer,Tmp0
 	ldi 	Tmp0,SHIFT_TIMER_MAX_VALUE
 	mov	CalcShiftTimer,Tmp0
+	
+		cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
+		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 
 	;Read Fatal error from EEPROM and write to PORTD
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -551,11 +560,15 @@ Power_save_mode_start:
 	ldi 	Tmp0,0
 	out 	ADCSR,Tmp0		;ADC=OFF
 	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable
-	sbr 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
-	out 	TIMSK,Tmp0		;Time interrupts disable!
+	
+	ldi	Tmp0,0			;Asynchronous operation of timer2
+	out 	OCR2,Tmp0		;Timer2 0,25 сек
+Wait_update_assr2:	
+	in	Tmp0,ASSR
+	andi	Tmp0,(1<<OCR2UB)
+	brne	Wait_update_assr2
 
-	;ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
-		ldi 	Tmp0,IDLE_MODE_MCUCR	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
 
 	sei
@@ -576,8 +589,6 @@ Power_save_mode_start:
 ;*****
 
 Idle_mode_start:
-	sbr 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
-	out 	TIMSK,Tmp0		;Time interrupts disable!
 
 	ldi 	Tmp0,IDLE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -622,12 +633,6 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 	wdr     ; Watchdog reset
 		; System watch
 		
-	ldi	Tmp1,1<<BIT_CLK_32768	
-	in	Tmp0,PORTC		
-	eor	Tmp0,Tmp1
-	out	PORTC,Tmp0
-	reti
-			
 	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
 	ldi	Tmp0,PRE_SECOND_INITIAL_VALUE
@@ -635,13 +640,18 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 	brne    Timer2_pin_low_battery_question
 	clr	PreSecondsCounter
 	sbr  	SystemFlags,(1<<SECOND_FLAG)
+	
+	ldi	Tmp1,1<<BIT_CLK_32768	
+	in	Tmp0,PORTC		
+	eor	Tmp0,Tmp1
+	out	PORTC,Tmp0
 
 	inc     SecondsCounter
 	ldi	Tmp0,SECOND_COUNTER_MAX_VALUE
 	cp	SecondsCounter,Tmp0
 	brne    Timer2_pin_low_battery_question
 	clr	SecondsCounter
-
+		
 	dec	MeasurementFlagTimer
 	brsh    Timer2_minutes_inc
 	ldi	Tmp0,TWO_HOURS
@@ -661,6 +671,7 @@ Timer2_minutes_inc:
 	clr	HoursCounter
 
 Timer2_pin_low_battery_question:
+
 	sbic    PIND,BIT_LOW_BATTERY
 	rjmp    Timer2_max_low_battery_timer
 	dec	LowBatteryTimer
@@ -723,22 +734,20 @@ Timer2_ACTIVE_TMS_FLAG_check:
 	ldi	Tmp0,0
 	cp	LowBatteryTimer,Tmp0
 	breq	Timer2_quit_
-
+	
 	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
 	sbi	PORTC,BIT_GEN_STOP              ; GEN_STOP = 1
 	sbi	PORTC,BIT_R_BR                  ; R_BR = 1
-	cli
 	ldi	Tmp0,TIM0_PRESCALER_256
 	out	TCCR0,Tmp0
 	ldi	Tmp0,TIM0_5_MS
 	out	TCNT0,Tmp0			; 20000 cycle
 	in	Tmp0,TIFR
-	andi	Tmp0,0x01
+	andi	Tmp0,(1<<TOV0)
 	out     TIFR,Tmp0
 	in	Tmp0,TIMSK		;Enable Timer0 interrupts
-	sbr  	Tmp0,(1<<TOIE0)
-	out	TIMSK,Tmp0
-Timer2_quit_:	
+	ori  	Tmp0,(1<<TOIE0)
+	out	TIMSK,Tmp0	
 	rjmp	Timer2_quit
 
 Timer2_C5VA_question:
@@ -771,8 +780,8 @@ Timer2_C5VA_question:
 	out	TCNT1H,Tmp0
 	ldi	Tmp0,TIMER1_PRESCALE_8
 	out	TCCR1B,Tmp0
-	in	Tmp0,TIMSK		; Enable Timer interrupts
-	sbr  	Tmp0,(1<<TOIE1)
+	in	Tmp0,TIMSK		; Enable Timer1 interrupts
+	ori  	Tmp0,(1<<TOIE1)
 	out	TIMSK,Tmp0
 	
 Timer2_bit_c5va_0:
@@ -784,6 +793,7 @@ Timer2_bit_c5va_0:
 	out 	ADCSR,Tmp0
 	sbi 	ADCSR,ADSC		;Start ADC Conversion
 	sbi	ADCSR,ADIE		;Enable ADC Interrupt
+Timer2_quit_:	
 	rjmp	Timer2_quit
 
 Timer2_bit_c5va_1:
@@ -820,17 +830,18 @@ TIM1_buzz_av1_0:
 ;*******************************************************************
 
 TIM0_ovf:		;Timer0 interrupt
-	push 	Tmp0
+
+;	push 	Tmp0
 
 	sbi	PORTC,BIT_CLK_STOP
 
 	ldi	Tmp0,WHITE_10_MKS
 Tim0_white_10_mks:
 	dec	Tmp0
-	brsh	Tim0_white_10_mks
+	brne	Tim0_white_10_mks
 
-	in	Tmp0,TIMSK		;Disable Timer interrupts
-	cbr  	Tmp0,(1<<TOIE0)
+	in	Tmp0,TIMSK		;Disable Timer0 interrupts
+	andi  	Tmp0,~(1<<TOIE0)
 	out	TIMSK,Tmp0
 	ldi	Tmp0,0
 	out 	TCCR0,Tmp0		;Stop Timer0
@@ -838,12 +849,14 @@ Tim0_white_10_mks:
 
 	cbi	PORTC,BIT_RS_TMS_I
 
-	pop 	Tmp0
+;	pop 	Tmp0
 	reti
 
 ;*******************************************************************
 SPI_stc: 	; SPI Transfer Complete Handler
 
+		sbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		in	Tmp0,SPSR			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	sbrs	InternalFlags,FIRST_BYTE_OF_SPI
 	rjmp	SPI_second_byte
 	in	Tmp0,SPDR
@@ -852,9 +865,10 @@ SPI_stc: 	; SPI Transfer Complete Handler
 	eor	Tmp1,Tmp0
 	breq	SPI_good_command
 SPI_bad_command:
-	ldi	Tmp1,0x0FF
+	ldi	Tmp1,0x0EE	;0x0FF
 	out	SPDR,Tmp1
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+		sbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_good_command:
@@ -889,6 +903,7 @@ SPI_system_stat_command:
 	out	SPDR,SystemFlags
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
+		sbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown_command:
@@ -896,6 +911,7 @@ SPI_TMS_powerdown_command:
 	out	SPDR,Tmp1
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
+		sbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_read_time_command:
@@ -945,6 +961,7 @@ SPI_erroneous_command:
 
 
 SPI_second_byte:
+		cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
 	dec	SPIByteCounter
 	ldi	Tmp1,0
 	ldi	r30,LOW(SPI_jump_second_byte)
@@ -974,13 +991,16 @@ SPI_jump_second_byte:
 
 SPI_system_stat:
 	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
+		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
 SPI_read_fatal_error:
+		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 SPI_set_test_flag:
 SPI_erroneous:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown:
+		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 	in	Tmp0,SPDR
 	mov	MeasurementFlagTimer,Tmp0
 	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
@@ -1203,7 +1223,7 @@ Pressure_less_15:
 	ldi	Tmp0,0		; Timer1 disable
 	out	TCCR1B,Tmp0
 	in	Tmp0,TIMSK		; Disable Timer interrupts
-	cbr  	Tmp0,(1<<TOIE1)
+	andi  	Tmp0,~(1<<TOIE1)
 	out	TIMSK,Tmp0
 	
 ADC_quit:
@@ -1296,8 +1316,8 @@ Fatal_error_occur:
 	out	TCNT1H,Tmp0
 	ldi	Tmp0,TIMER1_PRESCALE_8
 	out	TCCR1B,Tmp0
-	in	Tmp0,TIMSK		; Enable Timer interrupts
-	sbr  	Tmp0,(1<<TOIE1)
+	in	Tmp0,TIMSK		; Enable Timer1 interrupts
+	ori  	Tmp0,(1<<TOIE1)
 	out	TIMSK,Tmp0
 	
 	sbi     PORTD,BIT_INT3_OF_TMS
