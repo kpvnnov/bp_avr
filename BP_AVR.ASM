@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.31 2001-03-15 16:01:09 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.32 2001-03-20 17:12:00 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -400,20 +400,22 @@ Wait_update_assr:
 	out	SPCR,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 
-;	ldi	Tmp2,0x007
-;Wiat02:
-	ldi	Tmp1,0x0FF
-Wiat01:
-	ldi	Tmp0,0x0FF
+
+	ldi	Tmp2,0x0FF
 Wiat00:
-	dec	Tmp0
+	ldi	Tmp1,1<<BIT_WDI
+	in	Tmp0,PORTC
+	eor	Tmp0,Tmp1
+	out	PORTC,Tmp0
+	dec	Tmp2
 	brne	Wiat00
-	dec	Tmp1
-	brne	Wiat01
-;	dec	Tmp2
-;	brne	Wiat02
+
 
 Init_white_INT1_1:
+	ldi	Tmp1,1<<BIT_WDI
+	in	Tmp0,PORTC
+	eor	Tmp0,Tmp1
+	out	PORTC,Tmp0
 	nop
 	wdr
 	sbis    PIND,BIT_LOW_BATTERY
@@ -526,6 +528,10 @@ Fatal_error_was:
 	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=1024)
 	ldi	Tmp1,200		; 14 сек.
 Wait_key_1:
+	ldi	Tmp3,1<<BIT_WDI
+	in	Tmp2,PORTC
+	eor	Tmp2,Tmp3
+	out	PORTC,Tmp2
 	in	Tmp0,TIFR
 	sbrs    Tmp0,TOV0
 	rjmp	Wait_key_1
@@ -541,6 +547,10 @@ Wait_key_1:
 
 	ldi	Tmp1,71		; 5 сек.
 Wait_key_2:
+	ldi	Tmp3,1<<BIT_WDI
+	in	Tmp2,PORTC
+	eor	Tmp2,Tmp3
+	out	PORTC,Tmp2
 	in	Tmp0,TIFR
 	sbrs    Tmp0,TOV0
 	rjmp	Wait_key_2
