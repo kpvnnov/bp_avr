@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.27 2001-03-14 11:05:16 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.28 2001-03-15 14:24:15 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -89,7 +89,7 @@
 		.equ	EXTERNAL_BUZZER_FLAG=5		; 0
 		.equ	LAST_STAT_KEY=6			; 0
 		.equ	LAST_STAT_C5VA=7		; 1
-		.def 	SystemFlags=r21                         ;
+	.def 	SystemFlags=r21                         ;
 	     	.equ	SYSTEM_RS_FLAG=0                ; 1
 	     	.equ	LOW_BATTERY_FLAG=1              ; 0
 	     	.equ	SECOND_FLAG=2                   ; 0
@@ -425,7 +425,7 @@ Init_white_INT1_1:
 	out	UDR,Tmp0
 
 	ori 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	ori	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
+	;ori	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
 	sbr	InternalFlags,(1<<LAST_STAT_C5VA)
 
 	ldi     Tmp0,TWO_MINUTES
@@ -1096,13 +1096,13 @@ SPI_TMS_powerdown:
 SPI_wait_30_mks:
 	dec	Tmp0
 	brne	SPI_wait_30_mks
-	;cbi	PORTC,BIT_CLK_STOP			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	;cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	cbi	PORTC,BIT_CLK_STOP			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	ldi	Tmp0,WHITE_8_MKS
 SPI_wait_8_mks:
 	dec	Tmp0
 	brne	SPI_wait_8_mks
-	;sbi	PORTC,BIT_RS_TMS_I			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	sbi	PORTC,BIT_RS_TMS_I			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
