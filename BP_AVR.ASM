@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.22 2001-02-20 15:46:20 zykov Exp $ 
+;$Id: BP_AVR.ASM,v 1.23 2001-02-20 16:00:06 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -702,6 +702,9 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 
 	wdr     ; Watchdog reset
 		; System watch
+		
+	sbi     PORTC,BIT_R_BR		
+	
 	ldi	Tmp1,1<<BIT_WDI	
 	in	Tmp0,PORTC		
 	eor	Tmp0,Tmp1
@@ -791,7 +794,7 @@ Timer2_key_1:
 	sbic	PIND,BIT_C_5VA
 	rjmp    Timer2_FATAL_ERROR_FLAG_check
 	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;sbi     PORTC,BIT_R_BR
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
 Timer2_zero_to_30SecTime:
