@@ -107,8 +107,10 @@
 	.equ	POWER_SAVE_MODE_MCUCR=0b01111000
 
 	; for WDTCR
-	.equ	WATCHDOG_05_SEC=0b00001001	;0b00001101
+	.equ	WATCHDOG_025_SEC=0b00001100	;0b00001101
 	.equ	WATCHDOG_2_SEC=0b00001111
+	.equ	WATCHDOG_RS1=0b00011111
+	.equ	WATCHDOG_RS2=0b00010111
 
 	; for TIMSK
 	.equ	TIM2_OV_EN=0b01000000
@@ -299,22 +301,19 @@ Int_error:
 	out 	EEDR,Tmp1		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
+	
+		rjmp 	Power_save_mode_start ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 Reset: 		; Reset Handler
 	cli
 	sbi	PORTD,BIT_ERR0
 	in	Tmp0,MCUSR
-		sbrs	Tmp0,PORF
-		cbi	PORTD,BIT_ERR0
-;		sbrs	Tmp0,PORF	
-;		rjmp	Porf_check
-;Porf_check:
-	sbrc	Tmp0,PORF	
+;	sbrs	Tmp0,PORF
 	rjmp    Init_start
 
 Power_down_mode:
 	wdr
-	ldi 	Tmp0,WATCHDOG_05_SEC
+	ldi 	Tmp0,WATCHDOG_025_SEC
 	out	WDTCR,Tmp0
 
 	ldi 	Tmp0,TIM0_PRESCALER_0
@@ -322,11 +321,6 @@ Power_down_mode:
 
 	ldi 	Tmp0,TIM1_PRESCALER_0
 	out 	TCCR1B,Tmp0		;Timer1 stop!
-
-	ldi	Tmp0,AS2_EN
-	out 	ASSR,Tmp0		;Asynchronous operation of timer2
-	ldi	Tmp0,TIM2_PRESCALER_32
-	out 	TCCR2,Tmp0		;Timer2 0,25 сек
 
 	ldi 	Tmp0,IO_PIN_PORTA_FOR_RS
 	out 	DDRA,Tmp0
@@ -348,6 +342,17 @@ Power_down_mode:
 	ldi 	Tmp0,PORTD_FOR_RS
 	out 	PORTD,Tmp0
 
+	ldi	Tmp0,AS2_EN
+	out 	ASSR,Tmp0		;Asynchronous operation of timer2
+Wait_update_assr0:	
+	in	Tmp0,ASSR
+		cbi	PORTD,BIT_ERR1
+		sbi	PORTD,BIT_ERR1
+	andi	Tmp0,((1<<TCN2UB)|(1<<TCR2UB))
+	brne	Wait_update_assr0
+	ldi	Tmp0,TIM2_PRESCALER_32
+	out 	TCCR2,Tmp0		;Timer2 0,25 сек
+	
 	ldi 	Tmp0,POWER_DOWN_MODE_MCUCR
 	out 	MCUCR,Tmp0
 
@@ -362,9 +367,21 @@ Power_down_mode:
 Init_start:
 
 	wdr
-	ldi 	Tmp0,WATCHDOG_2_SEC
-	out	WDTCR,Tmp0
-
+;	ldi 	Tmp0,WATCHDOG_2_SEC	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	ldi 	Tmp0,WATCHDOG_RS1	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	ldi 	Tmp1,WATCHDOG_RS2	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	out	WDTCR,Tmp0		
+	out	WDTCR,Tmp1		;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
+	ldi	Tmp1,0x0FF
+Wiat01:	
+	ldi	Tmp0,0x0FF
+Wiat00:	
+	dec	Tmp0
+	brne	Wiat00
+	dec	Tmp1
+	brne	Wiat01
+	
 	ldi 	Tmp0,LOW(RAMEND)
 	out 	SPL,Tmp0			;Stack Pointer
 	ldi 	Tmp0,HIGH(RAMEND)
@@ -382,13 +399,34 @@ Init_start:
 
 	ldi 	Tmp0,IO_PIN_PORTC_FOR_RS
 	out 	DDRC,Tmp0
-	ldi 	Tmp0,PORTC_FOR_GEN_RUN
+	ldi 	Tmp0,PORTC_FOR_TMS_RS_CLK_RUN
 	out 	PORTC,Tmp0
 
 	ldi 	Tmp0,IO_PIN_PORTD_FOR_RS
 	out 	DDRD,Tmp0
 	ldi 	Tmp0,PORTD_FOR_RS
 	out 	PORTD,Tmp0
+	
+	ldi	Tmp0,AS2_EN
+	out 	ASSR,Tmp0		;Asynchronous operation of timer2
+Wait_update_assr:	
+	in	Tmp0,ASSR
+		cbi	PORTD,BIT_ERR1
+		sbi	PORTD,BIT_ERR1
+	andi	Tmp0,((1<<TCN2UB)|(1<<TCR2UB))
+	brne	Wait_update_assr
+	ldi	Tmp0,TIM2_PRESCALER_32
+	out 	TCCR2,Tmp0		;Timer2 0,25 сек
+	
+		
+Init_white_INT1_1:
+	nop
+	wdr
+	sbis    PIND,BIT_LOW_BATTERY
+	rjmp    Init_white_INT1_1
+	cbi	PORTD,BIT_ERR1
+	
+	sbi	PORTD,BIT_ERR0
 
 	ldi 	Tmp0,USBR_19_2		;11 - 19200 bps [3.6864 MHz]
 	out 	UBRR,Tmp0
@@ -396,8 +434,8 @@ Init_start:
 	out 	UCR,Tmp0
 	out	UDR,Tmp0
 
-	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
-	out 	MCUCR,Tmp0
+;	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
+;	out 	MCUCR,Tmp0
 
 	clr 	InternalFlags
 	clr 	SystemFlags
@@ -435,13 +473,6 @@ Init_start:
 	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
 	sts	FatalError,Tmp0
 
-Init_white_INT1_1:
-	nop
-		cbi	PORTD,BIT_ERR0
-		sbi	PORTD,BIT_ERR0
-	sbis    PORTD,BIT_LOW_BATTERY
-	rjmp    Init_white_INT1_1
-
 	sbrs	Tmp0,0
 	cbi	PORTD,BIT_ERR0
 	sbrs	Tmp0,1
@@ -450,6 +481,7 @@ Init_white_INT1_1:
 	cpi	Tmp0,NOT_FATAL_ERROR
 	brne	Fatal_error_was 	;If was Fatal Error.
 
+	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Power_save_mode_start
 
 ;*****
@@ -493,7 +525,7 @@ Wait_key_2:
 	ldi 	Tmp0,TIM0_PRESCALER_0	; Stop Timer0
 	out 	TCCR0,Tmp0
 
-	sbis    PIND,BIT_KEY_SIGNAL
+	sbis    PINB,BIT_KEY_SIGNAL
 	rjmp 	Power_save_mode_start
 
 	;Write EEPROM
@@ -522,7 +554,8 @@ Power_save_mode_start:
 	sbr 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
 	out 	TIMSK,Tmp0		;Time interrupts disable!
 
-	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
+	;ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
+		ldi 	Tmp0,IDLE_MODE_MCUCR	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	out 	MCUCR,Tmp0
 
 	sei
@@ -531,6 +564,9 @@ Power_save_mode_start:
 	nop
 	nop
 	nop
+	
+;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
 	nop
 	cli
 	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
@@ -540,6 +576,8 @@ Power_save_mode_start:
 ;*****
 
 Idle_mode_start:
+	sbr 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
+	out 	TIMSK,Tmp0		;Time interrupts disable!
 
 	ldi 	Tmp0,IDLE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -550,6 +588,9 @@ Idle_mode_start:
 	nop
 	nop
 	nop
+		
+;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
 	nop
 	cli
 	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
@@ -585,6 +626,7 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 	in	Tmp0,PORTC		
 	eor	Tmp0,Tmp1
 	out	PORTC,Tmp0
+	reti
 			
 	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
