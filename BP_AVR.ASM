@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.36 2002-07-08 16:38:28 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.37 2002-07-09 08:55:22 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -251,11 +251,13 @@
 	.equ	TIM0_5_MS=175              	; 255-80  prescaler=256
 	.equ    TIMER1_4_KHZ=0x0FF8D		; 0x0FFFF-((250*3.6468)/8)
 	.equ    TIMER1_PRESCALE_8=2
-
-	.equ	FATAL_ERROR_2S=0
-	.equ	FATAL_ERROR_295=1
-	.equ	FATAL_ERROR_315=2
-	.equ	C5VA_ERROR=4
+	
+	;это для версии с временной блокировкой после фатальной ошибки		
+						;БЫЛО
+	.equ	FATAL_ERROR_2S=128		;FATAL_ERROR_2S=0
+	.equ	FATAL_ERROR_295=129		;FATAL_ERROR_295=1
+	.equ	FATAL_ERROR_315=130		;FATAL_ERROR_315=2
+	.equ	C5VA_ERROR=131			;C5VA_ERROR=4
 	.equ	NOT_FATAL_ERROR=0x0EE
 
 	.equ	PRE_SECOND_INITIAL_VALUE=4
@@ -304,7 +306,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.36 $ $Date: 2002-07-08 16:38:28 $",0
+	.db 	"$Revision: 1.37 $ $Date: 2002-07-09 08:55:22 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
