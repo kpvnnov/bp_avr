@@ -146,6 +146,7 @@
   		.equ	BIT_BUZZ_AV1=0
   		.equ	BIT_BUZZ_AV2=1
   		.equ	BIT_KEY_SIGNAL=3
+  		.equ	BIT_SPI_SS=4
 
 	.equ	IO_PIN_PORTB_FOR_RS=0b01000011
 	.equ	PORTB_FOR_RS=0b01001110
@@ -225,7 +226,7 @@
 	.equ	C5VA_ERROR=4
 	.equ	NOT_FATAL_ERROR=0x0FF
 
-	.equ	PRE_SECOND_INITIAL_VALUE=4
+	.equ	PRE_SECOND_INITIAL_VALUE=32
 	.equ    SECOND_COUNTER_MAX_VALUE=60
 	.equ    MINUTES_COUNTER_MAX_VALUE=60
 	.equ    HOURS_COUNTER_MAX_VALUE=24
@@ -303,7 +304,7 @@ Int_error:
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 	
-		rjmp 	Power_save_mode_start ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		rjmp 	Idle_mode_start ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 Reset: 		; Reset Handler
 	cli
@@ -405,7 +406,7 @@ Init_zero1:
 
 	ldi 	Tmp0,IO_PIN_PORTC_FOR_RS
 	out 	DDRC,Tmp0
-	ldi 	Tmp0,PORTC_FOR_TMS_RS_CLK_RUN
+	ldi 	Tmp0,PORTC_FOR_TMS_RUN
 	out 	PORTC,Tmp0
 
 	ldi 	Tmp0,IO_PIN_PORTD_FOR_RS
@@ -459,6 +460,7 @@ Init_white_INT1_1:
 	out	UDR,Tmp0
 
 	ori 	SystemFlags,(1<<SYSTEM_RS_FLAG)
+	ori	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
 
 	ldi     Tmp0,TWO_MINUTES
 	mov	TwoMinutesTimer,Tmp0
@@ -501,7 +503,7 @@ Init_white_INT1_1:
 	brne	Fatal_error_was 	;If was Fatal Error.
 
 	sbic    PINB,BIT_KEY_SIGNAL
-	rjmp 	Power_save_mode_start
+	rjmp 	Idle_mode_start
 
 ;*****
 
@@ -510,7 +512,7 @@ Fatal_error_was:
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	sbic    PINB,BIT_KEY_SIGNAL
-	rjmp 	Power_save_mode_start
+	rjmp 	Idle_mode_start
 
 	ldi 	Tmp0,TIM0_PRESCALER_1024
 	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=1024)
@@ -524,7 +526,7 @@ Wait_key_1:
 	out     TIFR,Tmp0
 
 	sbic    PINB,BIT_KEY_SIGNAL
-	rjmp 	Power_save_mode_start
+	rjmp 	Idle_mode_start
 
 	dec	Tmp1
 	brne	Wait_key_1
@@ -545,7 +547,7 @@ Wait_key_2:
 	out 	TCCR0,Tmp0
 
 	sbis    PINB,BIT_KEY_SIGNAL
-	rjmp 	Power_save_mode_start
+	rjmp 	Idle_mode_start
 
 	;Write EEPROM
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -560,7 +562,7 @@ Wait_key_2:
 	cbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 	sbr	SystemFlags,1<<TEST_FLAG
 
-	rjmp 	Power_save_mode_start
+	rjmp 	Idle_mode_start
 
 ;**********************************************************************
 ;
@@ -570,6 +572,9 @@ Power_save_mode_start:
 	ldi 	Tmp0,0
 	out 	ADCSR,Tmp0		;ADC=OFF
 	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable
+		
+	sbic	PINB,BIT_SPI_SS				
+	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
 	
 	ldi	Tmp0,0			;Asynchronous operation of timer2
 	out 	OCR2,Tmp0		;Timer2 0,25 сек
@@ -599,6 +604,10 @@ Wait_update_assr2:
 ;*****
 
 Idle_mode_start:
+
+	
+	sbic	PINB,BIT_SPI_SS				
+	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
 
 	ldi 	Tmp0,IDLE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -642,6 +651,8 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 
 	wdr     ; Watchdog reset
 		; System watch
+	sbic	PINB,BIT_SPI_SS				
+	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
 		
 	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
@@ -1411,6 +1422,8 @@ EE_writing_EEPROM_is_finished:
 
 	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
 	reti
+
+
 
 
 
