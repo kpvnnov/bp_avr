@@ -61,24 +61,34 @@
 	.def 	InternalFlags=r0                  	; for RS
 		.equ 	ACTIVE_TMS_FLAG=0               ; 0
 		.equ    CALK_SHIFT_FLAG=1               ; 0
-		.equ	FATAL_ERROR_FLAG=2              ; 0
-	     	.equ	BUZZER_FLAG=3                   ; 0
+		.equ	PRESSURE_MORE_15_FLAG=2      	; 0
+		.equ	FATAL_ERROR_FLAG=3              ; 0
+	     	.equ	BUZZER_FLAG=4                   ; 0
 	.def 	SystemFlags=r1                          ;
 	     	.equ	SYSTEM_RS_FLAG=0                ; 1
 	     	.equ	LOW_BATTERY_FLAG=1              ; 0
 	     	.equ	SECOND_FLAG=2                   ; 0
 	     	.equ	MEASUREMENT_FLAG=3              ; 0
 	     	.equ	FATAL_MEASUREMENT_ERROR_FLAG=4  ; 0
+		.equ	BAD_SHIFT_FLAG=5
+	.def 	SystemFlags,SECOND_FLAG
 	.def 	PreSecondsCounter=r2
 	.def 	SecondsCounter=r3
 	.def 	MinutesCounter=r4
 	.def 	HoursCounter=r5
+	.def	LowBatteryTimer=r6
+	.def	TwoMinutesTimer=r7
+	.def	CalcShiftTimer=r8
 	.def	Tmp0=r16
 	.def	Tmp1=r17
 	.def	Tmp2=r18
 	.def	Tmp3=r19
-	.def	ADC_L=r24
-	.def	ADC_H=r25
+	.def	ADCShiftPr0=r20
+	.def	ADCShiftPr2=r21
+	.def	ADC_L_pr0=r22
+	.def	ADC_H_pr0=r23
+	.def	ADC_L_pr2=r24
+	.def	ADC_H_pr2=r25
 
 	; I/O Registers
 	; for GIMSK
@@ -117,6 +127,8 @@
   		.equ	BIT_PRESSURE_CH_2=1
   		.equ	BIT_PRESSURE_CH_0=3
   		.equ	BIT_DISABLE_RS_TMS=4
+	.equ	ADM_PR0=3
+	.equ	ADM_PR2=1
 
 	.equ	IO_PIN_PORTA_FOR_RS=0b11100000
 	.equ	PORTA_FOR_RS=0b00010000
@@ -133,7 +145,7 @@
   		.equ	BIT_RS_TMS_I=0
   		.equ	BIT_GEN_STOP=1
   		.equ	BIT_CLK_STOP=2
-  		.equ	BIT_INT3_TMS=3
+  		.equ	BIT_INT3_OF_TMS=3
   		.equ	BIT_R_BR=4
   		.equ	BIT_CLK_32768=5
 
@@ -156,11 +168,13 @@
 	.equ	PORTD_FOR_RS=0b00001101
 
 	; SRAM
-	.equ	ShiftCount=0x60
-	.equ 	PressureShift=0x61
-	.equ 	PressureShiftHigh=0x62
-	.equ	Pressure295Timer=0x63
-	.equ	Pressure320Timer=0x64
+	.equ	CalcShiftTimer=0x60
+	.equ 	PressureShiftPr0=0x61
+	.equ 	PressureShiftHighPr0=0x62
+	.equ 	PressureShiftPr0=0x63
+	.equ 	PressureShiftHighPr0=0x64
+	.equ	Pressure295Timer=0x65
+	.equ	Pressure320Timer=0x66
 
 	;EEPROM
 	.equ	FATAL_ERROR_ADDRESS=0
@@ -173,11 +187,14 @@
 	.equ 	PRESSURE_295=0x0378
 	.equ 	PRESSURE_320=0x03C3
 
-	.equ	SHIFT_COUNT_CONST=38
-	.equ	CALC_SHIFT_DELAY=8
+	.equ	SHIFT_TIMER_MAX_VALUE=8		; 2-е сек
+	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
+	.equ	SECOND_1=4
+	.equ	SECOND_15=60
 
 	.equ	WHITE_10_MKS=12
-	.equ	TIM0_1_MS=239		;255-16
+	.equ	TIM0_1_MS=239		 	;255-16  prescaler=256
+	.equ	TIM0_5_MS=175              	;255-80  prescaler=256
 
 	.equ	FATAL_ERROR_315=0
 	.equ	FATAL_ERROR_295=1
@@ -377,8 +394,8 @@ Init_start:
 	sts	Pressure295Timer,Tmp0   ; 15 second
 	ldi 	Tmp0,4                 ;???????????????
 	sts	Pressure320Timer,Tmp0   ; 1 second
-	ldi 	Tmp0,SHIFT_COUNT_CONST
-	sts	ShiftCount,Tmp0
+	ldi 	Tmp0,SHIFT_TIMER_MAX_VALUE
+	mov	CalcShiftTimer,Tmp0
 
 Init_white_INT1_1:
 	nop
@@ -405,7 +422,7 @@ Init_white_INT1_1:
 Fatal_error_was:
 
 
-	sbr	InternalFlags,1<<FATAL_ERROR_FLAG
+	sbr	InternalFlags,(1<<FATAL_ERROR_FLAG)
 
 	sbic    PIND,BIT_KEY
 	rjmp 	Power_save_mode_start
@@ -439,6 +456,9 @@ Wait_key_2:
 	dec	Tmp1
 	brne	Wait_key_2
 
+	ldi 	Tmp0,TIM0_PRESCALER_0	; Stop Timer0
+	out 	TCCR0,Tmp0
+
 	sbis    PIND,BIT_KEY
 	rjmp 	Power_save_mode_start
 
@@ -449,9 +469,6 @@ Wait_key_2:
 	out 	EEDR,Tmp0		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
-
-	ldi 	Tmp0,TIM0_PRESCALER_0
-	out 	TCCR0,Tmp0
 
 	rjmp 	Power_save_mode_start
 
@@ -464,7 +481,7 @@ Power_save_mode_start:
 	out 	ADCSR,Tmp0		;ADC=OFF
 	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable
 	out 	TIMSK,Tmp0		;Time interrupts disable!
-	sbi 	TIMSK,TOIE2     	;Time interrupts disable!
+	sbi 	TIMSK,TOIE2     	;Timer2 interrupts enable!
 
 	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -496,7 +513,7 @@ Idle_mode_start:
 	nop
 	nop
 	cli
-	sbrs 	Flags,ACTIVE_TMS_FLAG
+	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
 	rjmp    Power_save_mode_start
 	rjmp    Idle_mode_start
 
@@ -506,14 +523,14 @@ Ext_int1:               ;Low battery
 
 	pusp 	Tmp0
 
-	cbi	PORTC,BIT_INT3_TMS
+	cbi	PORTC,BIT_INT3_OF_TMS
 	cbi	PORTC,BIT_R_BR
 
-	sbr	SystemFlags,1<<LOW_BATTERY_FLAG
+	sbr	SystemFlags,(1<<LOW_BATTERY_FLAG)
 	nop
 	nop
 
-	sbi	PORTC,BIT_INT3_TMS
+	sbi	PORTC,BIT_INT3_OF_TMS
 
 	pop 	Tmp0
 	reti
@@ -524,43 +541,115 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 
 	wdr     ; Watchdog reset
 		; System watch
+	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
 	cpi	PreSecondsCounter,PRE_SECOND_INITIAL_VALUE
-	brne    Timer2_key_question
+	brne    Timer2_pin_low_battery_question
 	clr	PreSecondsCounter
+	sbr  	SystemFlags,(1<<SECOND_FLAG)
 
 	inc     SecondsCounter
 	cpi	SecondsCounter,SECOND_COUNTER_MAX_VALUE
-	brne    Timer2_key_question
+	brne    Timer2_pin_low_battery_question
 	clr	SecondsCounter
 
 	inc     MinutesCounter
 	cpi     MinutesCounter,MINUTES_COUNTER_MAX_VALUE
-	brne    Timer2_key_question
+	brne    Timer2_pin_low_battery_question
 	clr	MinutesCounter
 
 	inc	HoursCounter
 	cpi     HoursCounter,HOURS_COUNTER_MAX_VALUE
-	brne    Timer2_key_question
+	brne    Timer2_pin_low_battery_question
 	clr	HoursCounter
 
+Timer2_pin_low_battery_question:
+	sbic    PORTD,BIT_LOW_BATTERY
+	rjmp    Timer2_max_low_battery_timer
+	dec	LowBatteryTimer
+	brpl    Timer2_key_question
+	clr	LowBatteryTimer			; Set LowBatteryTimer=0
+	rjmp	Timer2_key_question
+
+Timer2_max_low_battery_timer:
+	ldi	Tmp0,MAX_LOW_BATTERY_TIMER     	; Set LowBatteryTimer=max
+	mov	LowBatteryTimer,Tmp0
+
 Timer2_key_question:
-
 	sbic	PORTB,BIT_KEY_SIGNAL
-	rjmp	Timer2__key_1
+	rjmp	Timer2_key_1
+
+	ldi	Tmp0,MAX_LOW_BATTERY_TIMER     	; Set LowBatteryTimer=max
+	mov	LowBatteryTimer,Tmp0
+
 	sbrs	InternalFlag,ACTIVE_TMS_FLAG
-	rjmp	Timer2__key_2
+	rjmp	Timer2_key_0_low_battery_1
 
-	rjmp	Timer2__key_1
-Timer2__key_2:
-	rjmp	Timer2__key_1
-Timer2__key_1:
+	sbrs	InternalFlags,PRESSURE_MORE_15_FLAG
+	rjmp	Timer2_key_1
 
+	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
+	rjmp	Timer2_key_1
+
+Timer2_key_0_low_battery_1:
+	sbic    PORTD,BIT_LOW_BATTERY
+	sbr	SystemFlags,(1<<MEASUREMENT_FLAG)
+
+Timer2_key_1:
+
+	sbrc	InternalFlag,ACTIVE_TMS_FLAG
+	rjmp	Timer2_C5VA_question
+
+	cpi	PreSecondsCounter,0
+	brne	Timer2_quit
+
+	cpi	LowBatteryTimer,0
+	breq	Timer2_quit
+
+	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
+	sbi	PORTC,BIT_GEN_STOP              ; GEN_STOP = 1
+	sbi	PORTC,BIT_R_BR                  ; R_BR = 1
+	cli
 	ldi	Tmp0,TIM0_PRESCALE_256
 	out	TCCR0,Tmp0
-	ldi	Tmp0,TIM0_1_MS
-	out	TCNT0,Tmp0		; 4000 cycle
+	ldi	Tmp0,TIM0_5_MS
+	out	TCNT0,Tmp0			; 20000 cycle
+	in	Tmp0,TIFR
+	andi	Tmp0,0x01
+	out     TIFR,Tmp0
+	sbi	TIMSK,TOIE0
+	rjmp	Timer2_quit
 
+Timer2_C5VA_question:
+
+	sbic	PORTD,BIT_C_5VA
+	rjmp	Timer2_bit_c5va_1
+
+	dec	TwoMinutesTimer
+
+	ldi 	Tmp0,ADM_PR2		; ADCMUX = Pr2
+	out 	ADMUX,Tmp0
+	in 	Tmp0,ADCSR              ; ADC flag reset
+	out 	ADCSR,Tmp0
+	ldi 	Tmp0,0b10000110		;Prescaler=64, Int Enable
+	out 	ADCSR,Tmp0
+	sbi 	ADCSR,ADSC		;Start ADC Conversion
+	sbi	ADCSR,ADIE		;Enable ADC Interrupt
+	rjmp	Timer2_quit
+
+Timer2_bit_c5va_1:
+
+	ldi 	Tmp0,0b00000110		;Prescaler=64, Int Disable
+	out 	ADCSR,Tmp0
+	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
+
+	ldi     Tmp0,TWO_MINUTES
+	mov	TwoMinutesTimer,Tmp0
+
+Timer2_quit:
+	reti
 
 ;*******************************************************************
 
@@ -572,7 +661,7 @@ TIM0_ovf:		;Timer0 interrupt
 	ldi	Tmp0,WHITE_10_MKS
 Tim0_white_10_mks:
 	dec	Tmp0
-	brge	Tim0_white_10_mks
+	brpl	Tim0_white_10_mks
 
 	cbi  	TIMSK,TOIE0             ;Disable Timer interrupts
 	ldi	Tmp0,0
@@ -593,244 +682,183 @@ SPI_stc: 	; SPI Transfer Complete Handler
 
 ;********************************************************************
 ADC_int:
-	push 	Tmp0
 
-	cbi 	ADCSR,ADIE
+	in 	ADC_L_pr0,ADCL		; r24:r25 = ADC Value
+	in 	ADC_H_pr0,ADCH
+	out	UDR,ADC_L_pr0
+	out	UDR,ADC_H_pr0
 
-	in 	ADC_L,ADCL		; r24:r25 = ADC Value
-	in 	ADC_H,ADCH
+	in	Tmp0,ADMUX
+	cpi	Tmp0,ADM_PR0
+	breq    ADC_calc_shift_flag_question
+ADC_next_channel:
+	mov	ADC_L_pr2,ADC_L_pr0
+	mov	ADC_H_pr2,ADC_H_pr0
+	ldi 	Tmp0,ADM_PR0		; ADCMUX = Pr0
+	out 	ADMUX,Tmp0
+	sbi 	ADCSR,ADSC		;Start ADC Conversion
+	rjmp	ADC_quit
 
-	out	UDR,ADC_L
-	out	UDR,ADC_H
+ADC_calc_shift_flag_question:
 
-	sbrc	Flags,CALK_SHIFT_FLAG
+	sbrc	InternalFlags,CALK_SHIFT_FLAG
 	rjmp	Calculat_shift
 
-	lds 	r18,PressureShift
-	clr 	r17
+	ldi	Tmp0,0
+	sub 	ADC_L_pr2,ADCShiftPr2		;Substract Low byte
+	sbc 	ADC_H_pr2,Tmp0			;Substract With Carry High byte
+	brsh	ADC_sub_shift_pr0
+	ldi	ADC_H_pr2,0
+	ldi	ADC_L_pr2,0
 
-	cp	ADC_L,r18
-	cpc	ADC_H,r17
-	brlo	ADC_Lower_Than_Shift		;Compare with Shift
+ADC_sub_shift_pr0:
+	sub 	ADC_L_pr0,ADCShiftPr0		;Substract Low byte
+	sbc 	ADC_H_pr0,Tmp0			;Substract With Carry High byte
+	brsh	ADC_compare_pr0_pr2
+	ldi	ADC_H_pr0,0
+	ldi	ADC_L_pr0,0
 
-	sub 	ADC_L,r18			;Substract Low byte
-	sbc 	ADC_H,r17			;Substract With Carry High byte
-	rjmp	ADC_Further
-
-ADC_Lower_Than_Shift:
-	ldi	ADC_H,0
-	ldi	ADC_L,0
+ADC_compare_pr0_pr2:
+	cp	ADC_L_pr0,ADC_L_pr2
+	cpc	ADC_H_pr0,ADC_H_pr2
+	brsh	ADC_Further
+	mov     ADC_L_pr0,ADC_L_pr2
+	mov	ADC_H_pr0,ADC_H_pr2
 
 ADC_Further:
-	ldi 	r17,HIGH(PRESSURE_15)
-	cpi 	ADC_L,LOW(PRESSURE_15)	; Compare to PRESSURE_15
-	cpc 	ADC_H,r17
+	ldi 	Tmp1,HIGH(PRESSURE_15)
+	cpi 	ADC_L_pr0,LOW(PRESSURE_15)	; Compare to PRESSURE_15
+	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_15
 
-	sbrc	Flags,TIMER_FLAG
+	sbrc	InternalFlags,PRESSURE_MORE_15_FLAG
 	rjmp	Next_check
-
-
-		ori	Flags,1<<TIMER_FLAG
-		;Start Timer1 (16 bit) minutes counter
-		in 	Tmp0,TIMSK
-		ori 	Tmp0,1<<OCIE1	;Enable Timer1 Compare Match Interrupt
-		out 	TIMSK,Tmp0
-
-		;Timer1 (16 bit) minutes counter
-		ldi 	Tmp0,HIGH(TIMER_CONST)
-		out 	OCR1H,Tmp0
-		ldi 	Tmp0,LOW(TIMER_CONST)
-		out 	OCR1L,Tmp0
-
-		ldi	Tmp0,0
-		out 	TCCR1A,Tmp0
-
-		ldi 	Tmp0,0b00001101	;Clear On Compare & Prescaler=1024
-		out 	TCCR1B,Tmp0	;Start Timer1
+	sbr	InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
 
 Next_check:
-	ldi 	r17,HIGH(PRESSURE_295)
-	cpi 	ADC_L,LOW(PRESSURE_295)	; Compare to PRESSURE_295
-	cpc 	ADC_H,r17
+	ldi 	Tmp1,HIGH(PRESSURE_295)
+	cpi 	ADC_L_pr0,LOW(PRESSURE_295)	; Compare to PRESSURE_295
+	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_295
 
 	dec	Pressure295Timer
 	breq	Pressure_more_295
 
-	ldi 	r17,HIGH(PRESSURE_320)
-	cpi 	ADC_L,LOW(PRESSURE_320)	; Compare to PRESSURE_320
-	cpc 	ADC_H,r17
+	ldi 	Tmp1,HIGH(PRESSURE_320)
+	cpi 	ADC_L_pr0,LOW(PRESSURE_320)	; Compare to PRESSURE_320
+	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_320
 
 	dec	Pressure320Timer
-	brne	Before_return
+	brne	ADC_quit
 
 	;Write EEPROM
-	ldi 	r17,0x02
+	ldi 	Tmp1,0x02
 	rjmp	Fatal_error_occur
 
 Pressure_more_295:
 	;Write EEPROM
-	ldi 	r17,0x01
+	ldi 	Tmp1,0x01
 	rjmp	Fatal_error_occur
 
 Pressure_less_295:
-	ldi	Pressure295Timer,225
-	ldi	Pressure320Timer,15
-	rjmp 	Before_return
+	ldi	Pressure295Timer,SECOND_1=4
+	ldi	Pressure320Timer,SECOND_15=60
+	rjmp 	ADC_quit
 
 Pressure_less_320:
-	ldi	Pressure320Timer,15
-	rjmp 	Before_return
+	ldi	Pressure320Timer,SECOND_15=60
+	rjmp 	ADC_quit
 
 Pressure_less_15:
-	andi    Flags,~(1<<TIMER_FLAG)
-	andi    Flags,~(1<<BUZZER_FLAG)
-	;Stop Timer1 (16 bit) minutes counter
+	cbr     InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
+	cbr     InternalFlags,(1<<BUZZER_FLAG)
 
-	in 	Tmp0,TIMSK
-	andi 	Tmp0,~(1<<OCIE1)		;Disable Timer1 Compare Match Interrupt
-	out 	TIMSK,Tmp0
-
-	ldi 	Tmp0,0b00001000		;Clear On Compare & Prescaler=0
-	out 	TCCR1B,Tmp0		;Stop Timer1
-
-	ldi	Tmp0,0
-	out	TCNT1H,Tmp0		;Clear Timer contents
-	out	TCNT1L,Tmp0
-	sts	MinuteCounter,Tmp0		;Clear Minute Counter
-
-	cbi	PORTB,BIT_BUZZER
-
-	sbic	PIND,BIT_C_5VA
-	andi    Flags,~(1<<IDLE_FLAG)
-
-Before_return:
-	in 	Tmp0,TIMSK
-	ori 	Tmp0,1<<TOIE0
-	out 	TIMSK,Tmp0		;Enable Timer0 Overflow interrupt
-	ldi 	Tmp0,0x04
-	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=256) ~15Hz
-
-	pop 	Tmp0
+ADC_quit
 	reti
 
+
 Calculat_shift:
-	dec 	ShiftCount
-	cpi	ShiftCount,CALC_SHIFT_DELAY
-	brsh	Before_return
+	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
+	dec 	CalcShiftTimer
+	cpi	CalcShiftTimer,CALC_SHIFT_DELAY
+	brsh	ADC_quit
 
-	sbi	PORTD,BIT_R_BR
+	lds 	Tmp0,PressureShiftPr0
+	lds 	Tmp1,PressureShiftHighPr0
+	add	Tmp0,ADC_L_pr0
+	sts	PressureShiftPr0,Tmp0
+	adc	Tmp1,ADC_H_pr0
+	sts	PressureShiftHighPr0,Tmp1
 
-	ldi 	r17,HIGH(PRESSURE_10)
-	cpi 	ADC_L,LOW(PRESSURE_10)	;Compare to PRESSURE 15
-	cpc 	ADC_H,r17
-	brsh	Bad_shift
+	lds 	Tmp0,PressureShiftPr2
+	lds 	Tmp1,PressureShiftHighPr2
+	add	Tmp0,ADC_L_pr2
+	sts	PressureShiftPr2,Tmp0
+	adc	Tmp1,ADC_H_pr2
+	sts	PressureShiftHighPr2,Tmp1
 
-	lds 	r17,PressureShift
-	lds 	r18,PressureShiftHigh
-	add	r17,ADC_L
-	sts	PressureShift,r17
-	adc	r18,ADC_H
-	sts	PressureShiftHigh,r18
-	cpi	ShiftCount,0
-	brne	Before_return
+	cpi	CalcShiftTimer,0
+	brne	ADC_quit
 
-	ror	r18
-	ror	r17
-	lsr     r17
-	lsr     r17
-	sts	PressureShift,r17
-	andi	Flags,~(1<<CALK_SHIFT_FLAG)
-	rjmp	Before_return
+	lds 	Tmp1,PressureShiftPr2
+	lds 	Tmp2,PressureShiftHighPr2
+	ror	Tmp2
+	ror	Tmp1
+	ror	Tmp2
+	ror	Tmp1
+	mov	ADCShiftPr2,Tmp1
+	andi    Tmp2,0x0F
+	ldi 	Tmp0,HIGH(PRESSURE_12)
+	cpi 	Tmp1,LOW(PRESSURE_12)	;Compare to PRESSURE 12
+	cpc 	Tmp2,Tmp0
+	brlo	Calc_shift_pr0
+	ldi	ADCShiftPr2,PRESSURE_12
+	sbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
+Calc_shift_pr0:
+	lds 	Tmp1,PressureShiftPr0
+	lds 	Tmp2,PressureShiftHighPr0
+	ror	Tmp2
+	ror	Tmp1
+	ror	Tmp2
+	ror	Tmp1
+	mov	ADCShiftPr0,Tmp1
+	andi    Tmp2,0x0F
+	ldi 	Tmp0,HIGH(PRESSURE_12)
+	cpi 	Tmp1,LOW(PRESSURE_12)	;Compare to PRESSURE 12
+	cpc 	Tmp2,Tmp0
+	brlo	Calc_shift_flag_reset
+	ldi	ADCShiftPr0,PRESSURE_12
+	sbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
 
-Bad_shift:
-	ldi	Tmp0,PRESSURE_5
-	sts 	PressureShift,Tmp0
-	andi	Flags,~(1<<CALK_SHIFT_FLAG)
-
-	rjmp	Before_return
+Calc_shift_flag_reset:
+	cbr	InternalFlags,(1<<CALK_SHIFT_FLAG)
+	rjmp	ADC_quit
 
 Fatal_error_occur:
-	ldi 	Tmp0,0
+	ldi 	Tmp0,FATAL_ERROR_ADDRESS
 	out 	EEAR,Tmp0		;Set EEPROM Address
-	out 	EEDR,r17		;Set Data To be written
+	out 	EEDR,Tmp1		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 
-	sbrs	r17,0
-	cbi	PORTC,BIT_ERROR_COD_0
-	sbrs	r17,1
-	cbi	PORTC,BIT_ERROR_COD_1
+	sbrs	Tmp1,0
+	cbi	PORTD,BIT_ERR0
+	sbrs	Tmp1,1
+	cbi	PORTD,BIT_ERR1
 
-	cbi	PORTD,BIT_R_BR
+	cbi	PORTC,BIT_R_BR
 	sbi	PORTB,BIT_BUZZER
 
-	ori	Flags,1<<BUZZER_FLAG
-	cbi     PORTD,BIT_INT3_OF_TMS
+	sbr	InternalFlags,(1<<BUZZER_FLAG)
+	cbi     PORTC,BIT_INT3_OF_TMS
+	sbr	SystemFlags,(1<<FATAL_MEASUREMENT_ERROR_FLAG)
+	nop
+	nop
 	nop
 	sbi     PORTD,BIT_INT3_OF_TMS
+	rjmp	ADC_quit
 
-		ori	Flags,1<<TIMER_FLAG
-		ori	Flags,1<<BUZZER_FLAG
-		;Start Timer1 (16 bit) buzzer counter
-		in 	Tmp0,TIMSK
-		andi 	Tmp0,~(1<<OCIE1)		;Disable Timer1 Compare Match Interrupt
-		out 	TIMSK,Tmp0
-
-		;Timer1 (16 bit) buzzer counter
-		ldi 	Tmp0,HIGH(BUZZER_CONST)
-		out 	OCR1H,Tmp0
-		ldi 	Tmp0,LOW(BUZZER_CONST)
-		out 	OCR1L,Tmp0
-		ldi 	Tmp0,0b01000000
-		out	TCCR1A,Tmp0		;Timer Output = Toggle Line
-		ldi 	Tmp0,0b00001001		;Clear On Compare & Prescaler=1
-		out 	TCCR1B,Tmp0		;Start Timer1
-
-	rjmp	Before_return
 
 ***********************
-
-
-
-C+5va_0:               ;C+5va
-	push 	Tmp0
-
-	ldi 	Tmp0,0
-	out 	ADMUX,Tmp0
-
-	ldi 	Tmp0,0b10000101		;Prescaler=32, Int Enable
-	out 	ADCSR,Tmp0
-
-	in 	Tmp0,GIMSK
-	andi 	Tmp0,~(1<<INT0)
-	out 	GIMSK,Tmp0		;Int0 Disable
-
-	in 	Tmp0,TIMSK
-	ori 	Tmp0,1<<TOIE0
-	out 	TIMSK,Tmp0		;Enable Timer0 Overflow interrupt (ADC Period Starts)
-	ldi 	Tmp0,0x04
-	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=256) ~15Hz
-
-	ori 	Flags,1<<IDLE_FLAG	  ;Set Idle Flag
-	ori 	Flags,1<<CALK_SHIFT_FLAG  ;Set Calculate shift Flag
-	ldi	ShiftCount,SHIFT_COUNT_CONST
-	ldi	Pressure295Timer,225    ; 15 second
-	ldi	Pressure320Timer,15     ; 1 second
-
-	pop 	Tmp0
-	reti
-
-
-
-
-
-
-
-	cbi	ADCSR,ADFR		;Clear Free Run bit
-	sbi 	ADCSR,ADSC		;Start ADC Conversion
-	sbi	ADCSR,ADIE		;Enable ADC Interrupt
-
 
