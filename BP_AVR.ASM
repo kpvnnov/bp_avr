@@ -18,8 +18,8 @@
 ;
 ;  PA0(pin37) - GND !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ;  PA1(pin36) - ADC1 Pressure channel_2
-;  PA2(pin35) - GND !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-;  PA3(pin34) - ADC3 Pressure channel_0
+;  PA2(pin35) - GND !!!!!!!!!!!!!!!!!!! <-> ADC2 Pressure channel_0
+;  PA3(pin34) - ADC3 Pressure channel_0 <-> GND !!!!!!!!!!!!!!!!!!!
 ;  PA4(pin33) - Disable RS_TMS input ( Pull up )
 ;  PA5(pin32) - no connect           ( Pull up )
 ;  PA6(pin31) - no connect           ( Pull up )
@@ -58,19 +58,25 @@
 	.include "4434def.inc"
 
 	; Variables
+	.def 	InternalFlags=r0                  	; for RS
+		.equ 	ACTIVE_TMS_FLAG=0               ; 0
+		.equ    CALK_SHIFT_FLAG=1               ; 0
+		.equ	FATAL_ERROR_FLAG=2              ; 0
+	     	.equ	BUZZER_FLAG=3                   ; 0
+	.def 	SystemFlags=r1                          ;
+	     	.equ	SYSTEM_RS_FLAG=0                ; 1
+	     	.equ	LOW_BATTERY_FLAG=1              ; 0
+	     	.equ	SECOND_FLAG=2                   ; 0
+	     	.equ	MEASUREMENT_FLAG=3              ; 0
+	     	.equ	FATAL_MEASUREMENT_ERROR_FLAG=4  ; 0
+	.def 	PreSecondsCounter=r2
+	.def 	SecondsCounter=r3
+	.def 	MinutesCounter=r4
+	.def 	HoursCounter=r5
 	.def	Tmp0=r16
 	.def	Tmp1=r17
 	.def	Tmp2=r18
 	.def	Tmp3=r19
-	.def	ShiftCount=r20
-	.def	Pressure295Timer=r21
-	.def	Pressure320Timer=r22
-	.def 	Flags=r23
-		.equ 	IDLE_FLAG=0
-		.equ    CALK_SHIFT_FLAG=1
-		.equ	FATAL_ERROR_FLAG=2
-	     	.equ	TIMER_FLAG=3
-	     	.equ	BUZZER_FLAG=4
 	.def	ADC_L=r24
 	.def	ADC_H=r25
 
@@ -95,6 +101,8 @@
 	; Timers
 	; for TCCR0
 	.equ	TIM0_PRESCALER_0=0
+	.equ	TIM0_PRESCALER_256=4
+	.equ	TIM0_PRESCALER_1024=5
 	; for TCCR1B
 	.equ	TIM1_PRESCALER_0=0
 	; for ASSR
@@ -148,12 +156,15 @@
 	.equ	PORTD_FOR_RS=0b00001101
 
 	; SRAM
-	.equ 	PressureShift=0x60
-	.equ 	PressureShiftHigh=0x61
-	.equ 	SecondsCounter=0x62
-	.equ 	MinutesCounter=0x63
-	.equ 	HoursCounter=0x64
-	.equ 	ErrorInterruptFlag=0x65
+	.equ	ShiftCount=0x60
+	.equ 	PressureShift=0x61
+	.equ 	PressureShiftHigh=0x62
+	.equ	Pressure295Timer=0x63
+	.equ	Pressure320Timer=0x64
+
+	;EEPROM
+	.equ	FATAL_ERROR_ADDRESS=0
+	.equ	ERR_INT_FLAG_ADDRESS=1
 
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
@@ -165,9 +176,18 @@
 	.equ	SHIFT_COUNT_CONST=38
 	.equ	CALC_SHIFT_DELAY=8
 
-	.equ 	TIMER_CONST=58594
-	.equ	BUZZER_CONST=127
+	.equ	WHITE_10_MKS=12
+	.equ	TIM0_1_MS=239		;255-16
 
+	.equ	FATAL_ERROR_315=0
+	.equ	FATAL_ERROR_295=1
+	.equ	FATAL_ERROR_2S=2
+	.equ	NOT_FATAL_ERROR=0x0FF
+
+	.equ	PRE_SECOND_INITIAL_VALUE=4
+	.equ    SECOND_COUNTER_MAX_VALUE=60
+	.equ    MINUTES_COUNTER_MAX_VALUE=60
+	.equ    HOURS_COUNTER_MAX_VALUE=24
 
 ;********************************************************************
 ; Interrupts vectors
@@ -195,31 +215,67 @@
 ;*       Initialization
 ;********************************************************************
 
-TIM2_comp: 	; Timer1 compare Handler
-TIM1_capt: 	; Timer1 Capture Handler
-TIM1_compa: 	; Timer1 compare Handler
-TIM1_compb: 	; Timer1 compare Handler
-TIM1_ovf: 	; Timer1 Overflow Handler
-UART_rxc: 	; UART RX Complete Handler
-UART_udre: 	; UDR Empty Handler
-UART_tx: 	; UART TX Complete Handler
-EE_rdy:   	; EEPROM Ready Handler
-ANA_comp: 	; Analog Comparator Handler
-
+Ext_int0: 	; IRQ0 Handler
 	cli
-	ldi	Tmp0,1
-	sts	ErrorInterruptFlag,Tmp0
+	ldi 	Tmp1,0x01
+	rjmp	Int_error
+TIM2_comp: 	; Timer1 compare Handler
+	cli
+	ldi 	Tmp1,0x02
+	rjmp	Int_error
+TIM1_capt: 	; Timer1 Capture Handler
+	cli
+	ldi 	Tmp1,0x03
+	rjmp	Int_error
+TIM1_compa: 	; Timer1 compare Handler
+	cli
+	ldi 	Tmp1,0x04
+	rjmp	Int_error
+TIM1_compb: 	; Timer1 compare Handler
+	cli
+	ldi 	Tmp1,0x05
+	rjmp	Int_error
+TIM1_ovf: 	; Timer1 Overflow Handler
+	cli
+	ldi 	Tmp1,0x06
+	rjmp	Int_error
+UART_rxc: 	; UART RX Complete Handler
+	cli
+	ldi 	Tmp1,0x07
+	rjmp	Int_error
+UART_udre: 	; UDR Empty Handler
+	cli
+	ldi 	Tmp1,0x08
+	rjmp	Int_error
+UART_tx: 	; UART TX Complete Handler
+	cli
+	ldi 	Tmp1,0x09
+	rjmp	Int_error
+EE_rdy:   	; EEPROM Ready Handler
+	cli
+	ldi 	Tmp1,0x0A
+	rjmp	Int_error
+ANA_comp: 	; Analog Comparator Handler
+	cli
+	ldi 	Tmp1,0x0B
+	rjmp	Int_error
+
+Int_error:
+	ldi 	Tmp0,ERR_INT_FLAG_ADDRESS
+	out 	EEAR,Tmp0		;Set EEPROM Address
+	out 	EEDR,Tmp1		;Set Data To be written
+	sbi 	EECR,EEMWE
+	sbi 	EECR,EEWE
 
 Reset: 		; Reset Handler
-
 	cli
 	sbis	MCUSR,PORF
 	rjmp    Init_start
 
 ;Power_down_mode
+	wdr
 	ldi 	Tmp0,WATCHDOG_05_SEC
 	out	WDTCR,Tmp0
-	wdr
 
 	ldi 	Tmp0,0
 	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable!
@@ -256,9 +312,6 @@ Reset: 		; Reset Handler
 	out 	DDRD,Tmp0
 	ldi 	Tmp0,PORTD_FOR_RS
 	out 	PORTD,Tmp0
-
-	ldi	Tmp0,0
-	sts	ErrorInterruptFlag,Tmp0		; Clear ErrorFlag
 
 	ldi 	Tmp0,POWER_DOWN_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -300,35 +353,50 @@ Init_start:
 	ldi 	Tmp0,PORTD_FOR_RS
 	out 	PORTD,Tmp0
 
-	ldi Tmp0,USBR_19_2		;11 - 19200 bps [3.6864 MHz]
-	out UBRR,Tmp0
-	ldi Tmp0,USB_TRANSMIT_ONLY
-	out UCR,Tmp0
+	ldi 	Tmp0,USBR_19_2		;11 - 19200 bps [3.6864 MHz]
+	out 	UBRR,Tmp0
+	ldi 	Tmp0,USB_TRANSMIT_ONLY
+	out 	UCR,Tmp0
 
 	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
 
+	clr 	InternalFlags
+	clr 	SystemFlags
+	sbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
+	clr 	PreSecondsCounter,Tmp0
+	clr 	SecondsCounter,Tmp0
+	clr 	MinutesCounter,Tmp0
+	clr 	HoursCounter,Tmp0
 
-
-
-
-	clr 	Flags
-	sts 	PressureShift,Flags
-	sts 	PressureShiftHigh,Flags
-
-
-	ldi	Pressure295Timer,225    ; 15 second
-	ldi	Pressure320Timer,15     ; 1 second
-	ldi	ShiftCount,SHIFT_COUNT_CONST
-
-	;Read EEPROM
 	ldi 	Tmp0,0
+	sts 	PressureShift,Tmp0
+	sts 	PressureShiftHigh,Tmp0
+
+	ldi 	Tmp0,60                ;???????????????
+	sts	Pressure295Timer,Tmp0   ; 15 second
+	ldi 	Tmp0,4                 ;???????????????
+	sts	Pressure320Timer,Tmp0   ; 1 second
+	ldi 	Tmp0,SHIFT_COUNT_CONST
+	sts	ShiftCount,Tmp0
+
+Init_white_INT1_1:
+	nop
+	sbis    PORTD,BIT_LOW_BATTERY
+	rjmp    Init_white_INT1_1
+
+	;Read Fatal error from EEPROM and write to PORTD
+	ldi 	Tmp0,FATAL_ERROR_ADDRESS
 	out 	EEAR,Tmp0		;Set EEPROM Address
 	sbi 	EECR,EERE
 	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	sbrs	Tmp0,0
+	cbi	PORTD,BIT_ERR0
+	sbrs	Tmp0,1
+	cbi	PORTD,BIT_ERR1
 
-	cpi	Tmp0,3
-	brlo	Fatal_error_was 	;If was Fatal Error.
+	cpi	Tmp0,NOT_FATAL_ERROR
+	brne	Fatal_error_was 	;If was Fatal Error.
 
 	rjmp 	Power_save_mode_start
 
@@ -336,21 +404,15 @@ Init_start:
 
 Fatal_error_was:
 
-	sbrs	Tmp0,0
-	cbi	PORTC,BIT_ERROR_COD_0
-	sbrs	Tmp0,1
-	cbi	PORTC,BIT_ERROR_COD_1
 
-	cbi	PORTD,BIT_R_BR
-	ori	Flags,1<<FATAL_ERROR_FLAG
+	sbr	InternalFlags,1<<FATAL_ERROR_FLAG
 
 	sbic    PIND,BIT_KEY
 	rjmp 	Power_save_mode_start
 
-	ldi 	Tmp0,0x05
-	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=1024) ~7Hz
-	ldi	r17,0x7F
-sbi PORTD,7
+	ldi 	Tmp0,TIM0_PRESCALER_1024
+	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=1024)
+	ldi	Tmp1,200		; 14 сек.
 Wait_key_1:
 	in	Tmp0,TIFR
 	sbrs    Tmp0,TOV0
@@ -362,12 +424,10 @@ Wait_key_1:
 	sbic    PIND,BIT_KEY
 	rjmp 	Power_save_mode_start
 
-	dec	r17
+	dec	Tmp1
 	brne	Wait_key_1
 
-cbi PORTD,7
-
-	ldi	r17,0x0F
+	ldi	Tmp1,71		; 5 сек.
 Wait_key_2:
 	in	Tmp0,TIFR
 	sbrs    Tmp0,TOV0
@@ -376,20 +436,22 @@ Wait_key_2:
 	in	Tmp0,TIFR
 	out     TIFR,Tmp0
 
-	dec	r17
+	dec	Tmp1
 	brne	Wait_key_2
 
-sbi PORTD,7
 	sbis    PIND,BIT_KEY
 	rjmp 	Power_save_mode_start
 
 	;Write EEPROM
-	ldi 	Tmp0,0
+	ldi 	Tmp0,FATAL_ERROR_ADDRESS
 	out 	EEAR,Tmp0		;Set EEPROM Address
-	ldi 	Tmp0,0x0FF
+	ldi 	Tmp0,NOT_FATAL_ERROR
 	out 	EEDR,Tmp0		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
+
+	ldi 	Tmp0,TIM0_PRESCALER_0
+	out 	TCCR0,Tmp0
 
 	rjmp 	Power_save_mode_start
 
@@ -400,9 +462,9 @@ Power_save_mode_start:
 
 	ldi 	Tmp0,0
 	out 	ADCSR,Tmp0		;ADC=OFF
+	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable
 	out 	TIMSK,Tmp0		;Time interrupts disable!
-	ldi 	Tmp0,(1<<INT0)
-	out 	GIMSK,Tmp0		;Int0 interrupts enable only!
+	sbi 	TIMSK,TOIE2     	;Time interrupts disable!
 
 	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -412,19 +474,18 @@ Power_save_mode_start:
 	nop
 	nop
 	nop
-	sbrs 	Flags,ACTIVE_TMS_FLAG
+	nop
+	nop
+	cli
+	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
 	rjmp    Power_save_mode_start
 	rjmp    Idle_mode_start
 
 ;*****
 
 Idle_mode_start:
-	ldi 	Tmp0,0
-	out 	GIMSK,Tmp0		;Int0 & Int1 interrupts disable!
 
-	in 	Tmp0,MCUCR
-	andi 	Tmp0,~(1<<SM)		;Clear bit SleepMode (Idle)
-	ori 	Tmp0,(1<<SE)		;Set bit SleepEnable
+	ldi 	Tmp0,IDLE_MODE_MCUCR
 	out 	MCUCR,Tmp0
 
 	sei
@@ -432,72 +493,103 @@ Idle_mode_start:
 	nop
 	nop
 	nop
+	nop
+	nop
+	cli
 	sbrs 	Flags,ACTIVE_TMS_FLAG
 	rjmp    Power_save_mode_start
 	rjmp    Idle_mode_start
 
 ;********************************************************************
 
-Ext_int0:               ;C+5va
-	push 	Tmp0
-
-	ldi 	Tmp0,0
-	out 	ADMUX,Tmp0
-
-	ldi 	Tmp0,0b10000101		;Prescaler=32, Int Enable
-	out 	ADCSR,Tmp0
-
-	in 	Tmp0,GIMSK
-	andi 	Tmp0,~(1<<INT0)
-	out 	GIMSK,Tmp0		;Int0 Disable
-
-	in 	Tmp0,TIMSK
-	ori 	Tmp0,1<<TOIE0
-	out 	TIMSK,Tmp0		;Enable Timer0 Overflow interrupt (ADC Period Starts)
-	ldi 	Tmp0,0x04
-	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=256) ~15Hz
-
-	ori 	Flags,1<<IDLE_FLAG	  ;Set Idle Flag
-	ori 	Flags,1<<CALK_SHIFT_FLAG  ;Set Calculate shift Flag
-	ldi	ShiftCount,SHIFT_COUNT_CONST
-	ldi	Pressure295Timer,225    ; 15 second
-	ldi	Pressure320Timer,15     ; 1 second
-
-	pop 	Tmp0
-	reti
-
-;********************************************************************
-
 Ext_int1:               ;Low battery
 
+	pusp 	Tmp0
+
+	cbi	PORTC,BIT_INT3_TMS
+	cbi	PORTC,BIT_R_BR
+
+	sbr	SystemFlags,1<<LOW_BATTERY_FLAG
+	nop
+	nop
+
+	sbi	PORTC,BIT_INT3_TMS
+
 	pop 	Tmp0
 	reti
+
 ;********************************************************************
 
-TIM2_ovf: 	; Timer1 Overflow Handler
+TIM2_ovf: 	; Timer2 Overflow Handler
+
+	wdr     ; Watchdog reset
+		; System watch
+	inc	PreSecondsCounter
+	cpi	PreSecondsCounter,PRE_SECOND_INITIAL_VALUE
+	brne    Timer2_key_question
+	clr	PreSecondsCounter
+
+	inc     SecondsCounter
+	cpi	SecondsCounter,SECOND_COUNTER_MAX_VALUE
+	brne    Timer2_key_question
+	clr	SecondsCounter
+
+	inc     MinutesCounter
+	cpi     MinutesCounter,MINUTES_COUNTER_MAX_VALUE
+	brne    Timer2_key_question
+	clr	MinutesCounter
+
+	inc	HoursCounter
+	cpi     HoursCounter,HOURS_COUNTER_MAX_VALUE
+	brne    Timer2_key_question
+	clr	HoursCounter
+
+Timer2_key_question:
+
+	sbic	PORTB,BIT_KEY_SIGNAL
+	rjmp	Timer2__key_1
+	sbrs	InternalFlag,ACTIVE_TMS_FLAG
+	rjmp	Timer2__key_2
+
+	rjmp	Timer2__key_1
+Timer2__key_2:
+	rjmp	Timer2__key_1
+Timer2__key_1:
+
+	ldi	Tmp0,TIM0_PRESCALE_256
+	out	TCCR0,Tmp0
+	ldi	Tmp0,TIM0_1_MS
+	out	TCNT0,Tmp0		; 4000 cycle
+
 
 ;*******************************************************************
 
-TIM0_ovf:		;Timer0 interrupt (~1/15Hz after ADC Convertion)
+TIM0_ovf:		;Timer0 interrupt
 	push 	Tmp0
 
-	in 	Tmp0,TIMSK
-	andi 	Tmp0,~(1<<TOIE0)
-	out 	TIMSK,Tmp0		;Disable Timer interrupts
+	sbi	PORTC,BIT_CLK_STOP
 
+	ldi	Tmp0,WHITE_10_MKS
+Tim0_white_10_mks:
+	dec	Tmp0
+	brge	Tim0_white_10_mks
+
+	cbi  	TIMSK,TOIE0             ;Disable Timer interrupts
 	ldi	Tmp0,0
 	out 	TCCR0,Tmp0		;Stop Timer0
 	out	TCNT0,Tmp0
 
-	cbi	ADCSR,ADFR		;Clear Free Run bit
-	sbi 	ADCSR,ADSC		;Start ADC Conversion
-	sbi	ADCSR,ADIE		;Enable ADC Interrupt
+	cbi	PORTC,BIT_RS_TMS_I
 
 	pop 	Tmp0
 	reti
 
 ;*******************************************************************
 SPI_stc: 	; SPI Transfer Complete Handler
+
+
+
+
 
 ;********************************************************************
 ADC_int:
@@ -698,4 +790,47 @@ Fatal_error_occur:
 		out 	TCCR1B,Tmp0		;Start Timer1
 
 	rjmp	Before_return
+
+***********************
+
+
+
+C+5va_0:               ;C+5va
+	push 	Tmp0
+
+	ldi 	Tmp0,0
+	out 	ADMUX,Tmp0
+
+	ldi 	Tmp0,0b10000101		;Prescaler=32, Int Enable
+	out 	ADCSR,Tmp0
+
+	in 	Tmp0,GIMSK
+	andi 	Tmp0,~(1<<INT0)
+	out 	GIMSK,Tmp0		;Int0 Disable
+
+	in 	Tmp0,TIMSK
+	ori 	Tmp0,1<<TOIE0
+	out 	TIMSK,Tmp0		;Enable Timer0 Overflow interrupt (ADC Period Starts)
+	ldi 	Tmp0,0x04
+	out 	TCCR0,Tmp0		;Run Timer0 (Prescaler=256) ~15Hz
+
+	ori 	Flags,1<<IDLE_FLAG	  ;Set Idle Flag
+	ori 	Flags,1<<CALK_SHIFT_FLAG  ;Set Calculate shift Flag
+	ldi	ShiftCount,SHIFT_COUNT_CONST
+	ldi	Pressure295Timer,225    ; 15 second
+	ldi	Pressure320Timer,15     ; 1 second
+
+	pop 	Tmp0
+	reti
+
+
+
+
+
+
+
+	cbi	ADCSR,ADFR		;Clear Free Run bit
+	sbi 	ADCSR,ADSC		;Start ADC Conversion
+	sbi	ADCSR,ADIE		;Enable ADC Interrupt
+
 
