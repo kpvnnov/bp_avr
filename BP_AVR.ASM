@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.16 2001-02-01 11:50:36 peter Exp $ 
+;$Id: BP_AVR.ASM,v 1.17 2001-02-01 11:57:26 peter Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -1308,7 +1308,7 @@ Pressure_less_295:
 	rjmp 	ADC_quit
 
 Pressure_less_320:
-	ldi	Tmp0,SECOND_15
+	ldi	Tmp0,SECOND_1
 	sts	Pressure320Timer,Tmp0
 	rjmp 	ADC_quit
 
