@@ -377,6 +377,23 @@ Init_start:
 	ldi 	Tmp0,HIGH(RAMEND)
 	out 	SPH,Tmp0			;Stack Pointer
 
+	ldi	Tmp0,0
+	ldi	XH,0
+	ldi	XL,23
+Init_zero0:
+	st	-X,Tmp0
+	cpi	XL,0
+	brne	Init_zero0
+	
+	ldi	Tmp0,32
+	ldi	Tmp1,0
+	ldi	XH,0
+	ldi	XL,0x60
+Init_zero1:
+	st	X+,Tmp1
+	dec	Tmp0
+	brne	Init_zero1
+
 	ldi 	Tmp0,IO_PIN_PORTA_FOR_RS
 	out 	DDRA,Tmp0
 	ldi 	Tmp0,PORTA_FOR_RS
@@ -412,19 +429,20 @@ Wait_update_assr:
 	in	Tmp0,SPSR
 	ldi	Tmp0,SPCR_SPI_EN_I_EN	;SPI initialyzation
 	out	SPCR,Tmp0
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	
-	ldi	Tmp2,0x007
-Wiat02:		
-	ldi	Tmp1,0x0FF
-Wiat01:	
-	ldi	Tmp0,0x0FF
-Wiat00:	
-	dec	Tmp0
-	brne	Wiat00
-	dec	Tmp1
-	brne	Wiat01
-	dec	Tmp2
-	brne	Wiat02
+;	ldi	Tmp2,0x007
+;Wiat02:		
+;	ldi	Tmp1,0x0FF
+;Wiat01:	
+;	ldi	Tmp0,0x0FF
+;Wiat00:	
+;	dec	Tmp0
+;	brne	Wiat00
+;	dec	Tmp1
+;	brne	Wiat01
+;	dec	Tmp2
+;	brne	Wiat02
 			
 Init_white_INT1_1:
 	nop
@@ -441,32 +459,25 @@ Init_white_INT1_1:
 	out 	UCR,Tmp0
 	out	UDR,Tmp0
 
-	clr 	InternalFlags
-	clr 	SystemFlags
-	sbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	clr 	PreSecondsCounter
-	clr 	SecondsCounter
-	clr 	MinutesCounter
-	clr 	HoursCounter
-	clr     ThirtySecondsTimer
+	ori 	SystemFlags,(1<<SYSTEM_RS_FLAG)
 
+	ldi     Tmp0,TWO_MINUTES
+	mov	TwoMinutesTimer,Tmp0
+	ldi     Tmp0,MAX_LOW_BATTERY_TIMER
+	mov	LowBatteryTimer,Tmp0
+	ldi     Tmp0,SHIFT_TIMER_MAX_VALUE
+	mov	CalcShiftTimer,Tmp0
+	ldi     Tmp0,1
+	mov	SPIByteCounter,Tmp0
 	ldi     Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
-
-	ldi 	Tmp0,0
-	sts 	PressureShiftPr0,Tmp0
-	sts 	PressureShiftHighPr0,Tmp0
-	sts 	PressureShiftPr2,Tmp0
-	sts 	PressureShiftHighPr2,Tmp0
+	ldi     Tmp0,TWO_HOURS
+	mov	MeasurementFlagTimer,Tmp0	
 
 	ldi	Tmp0,SECOND_15
 	sts	Pressure295Timer,Tmp0
 	ldi	Tmp0,SECOND_1
 	sts	Pressure320Timer,Tmp0
-	ldi	Tmp0,TWO_HOURS
-	mov	MeasurementFlagTimer,Tmp0
-	ldi 	Tmp0,SHIFT_TIMER_MAX_VALUE
-	mov	CalcShiftTimer,Tmp0
 	
 		cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
 		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
@@ -598,7 +609,7 @@ Idle_mode_start:
 	nop
 	nop
 	nop
-	nop
+;	nop
 		
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	
@@ -653,7 +664,7 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 	clr	SecondsCounter
 		
 	dec	MeasurementFlagTimer
-	brsh    Timer2_minutes_inc
+	brne    Timer2_minutes_inc
 	ldi	Tmp0,TWO_HOURS
 	mov	MeasurementFlagTimer,Tmp0
 	sbr	SystemFlags,(1<<MEASUREMENT_FLAG)
@@ -675,7 +686,7 @@ Timer2_pin_low_battery_question:
 	sbic    PIND,BIT_LOW_BATTERY
 	rjmp    Timer2_max_low_battery_timer
 	dec	LowBatteryTimer
-	brsh    Timer2_key_question
+	brne    Timer2_key_question
 	clr	LowBatteryTimer			; Set LowBatteryTimer=0
 	rjmp	Timer2_key_question
 
@@ -705,8 +716,9 @@ Timer2_key_0_low_battery_1:
 	sbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 
 Timer2_key_1:
+	cpi	ThirtySecondsTimer,0
+	breq    Timer2_zero_to_30SecTime
 	dec     ThirtySecondsTimer
-	brlo    Timer2_zero_to_30SecTime
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
 	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
@@ -856,7 +868,7 @@ Tim0_white_10_mks:
 SPI_stc: 	; SPI Transfer Complete Handler
 
 		sbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		in	Tmp0,SPSR			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	;	in	Tmp0,SPSR			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	sbrs	InternalFlags,FIRST_BYTE_OF_SPI
 	rjmp	SPI_second_byte
 	in	Tmp0,SPDR
@@ -867,7 +879,11 @@ SPI_stc: 	; SPI Transfer Complete Handler
 SPI_bad_command:
 	ldi	Tmp1,0x0EE	;0x0FF
 	out	SPDR,Tmp1
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	ldi    	Tmp0,0x0F
+	mov	SPICommand,Tmp0
+	andi	InternalFlags,~(1<<FIRST_BYTE_OF_SPI)
 		sbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
@@ -978,7 +994,6 @@ SPI_jump_second_byte:
 	rjmp	SPI_read_fatal_error
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
-	rjmp	SPI_erroneous
 	rjmp	SPI_set_test_flag
 	rjmp	SPI_set_time
 	rjmp	SPI_write_serial_number
@@ -996,7 +1011,7 @@ SPI_read_fatal_error:
 		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 SPI_set_test_flag:
 SPI_erroneous:
-	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown:
@@ -1005,18 +1020,19 @@ SPI_TMS_powerdown:
 	mov	MeasurementFlagTimer,Tmp0
 	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
 	ldi	Tmp0,WHITE_30_MKS
-SPI_white_30_mks:
+SPI_wait_30_mks:
 	dec	Tmp0
-	brsh	SPI_white_30_mks
+	brne	SPI_wait_30_mks
 	cbi	PORTC,BIT_CLK_STOP
 	cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	ldi	Tmp0,WHITE_8_MKS
-SPI_white_8_mks:
+SPI_wait_8_mks:
 	dec	Tmp0
-	brsh	SPI_white_8_mks
+	brne	SPI_wait_8_mks
 	cbi	PORTC,BIT_GEN_STOP
 	sbi	PORTC,BIT_RS_TMS_I
+	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
 SPI_read_time_next_byte:
@@ -1063,9 +1079,9 @@ SPI_set_time:
 	st	Y,Tmp0
 	cpse	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
-	ld	SecondsCounter,Y+
-	ld	MinutesCounter,Y+
 	ld	HoursCounter,Y
+	ld	MinutesCounter,-Y
+	ld	SecondsCounter,-Y
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
@@ -1079,7 +1095,7 @@ SPI_write_serial_number:
 	cpse	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 	sbi	EECR,EERIE	; Enable interrupt ready EEPROM
-	ldi	Tmp0,4
+	ldi	Tmp0,4+1
 	sts	EEPROMByteCounter,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
@@ -1396,5 +1412,7 @@ EE_writing_EEPROM_is_finished:
 
 	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
 	reti
+
+
 
 
