@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.35 2001-12-19 13:05:22 peter Exp $
+;$Id: BP_AVR.ASM,v 1.36 2002-07-08 16:38:28 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -202,6 +202,7 @@
 	.equ	StatusIsSaved=0x70
 	.equ	SPIWhiteTimer=0x71
 	.equ	SPINewTime=0x72			; 3-и байта
+	.equ	TwoMinutesTimerOfError=0x73	; “аймер двухминутной блокировки в случае ошибки
 	.equ	CheckVariablesBuffer=0x80	; 15-ть байт
 	.equ	SPIBufferForTms=0x90		; 8-мь байт
 	.equ	SPIBuffer=0xA0			; 15-ть байт
@@ -234,6 +235,7 @@
 	.equ	SECOND_15=60
 	.equ	THREE_SECOND=12
 	.equ    THIRTY_SECONDS=120
+	.equ	ONE_SECOUNDS=1
 	.equ	TWO_MINUTES=125			; 120 / 118 !!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
 	.equ    TWO_HOURS=120
@@ -302,7 +304,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.35 $ $Date: 2001-12-19 13:05:22 $",0
+	.db 	"$Revision: 1.36 $ $Date: 2002-07-08 16:38:28 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -548,6 +550,8 @@ Init_error_check:
 Fatal_error_was:
 
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
+	ldi     Tmp0,ONE_SECOUNDS
+	sts 	TwoMinutesTimerOfError,Tmp0		
 
 	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Idle_mode_start
@@ -737,6 +741,16 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 ;	in	Tmp0,PORTC
 ;	eor	Tmp0,Tmp1
 ;	out	PORTC,Tmp0
+
+	sbrs	SystemFlags,SECOND_FLAG
+	rjmp	TIM2_C_5VA_check
+	lds	Tmp0,TwoMinutesTimerOfError		;”держание —броса 2-е минуты при ‘ј“јЋ№Ќќ… ошибке
+	dec	Tmp0
+	sts	TwoMinutesTimerOfError,Tmp0
+	cpi	Tmp0,0	
+	brne	TIM2_C_5VA_check
+	cbr	SystemFlags,(1<<FATAL_ERROR_FLAG)	;!!!!!!!!!!!!!!!!!!!!!!
+	
 TIM2_C_5VA_check:
 	in	Tmp2,PIND
 	sbrs	Tmp2,BIT_C_5VA
@@ -906,7 +920,7 @@ Timer2_bit_c5va_1:
 	mov	OneMinutesTimer,Tmp0
 	ldi     Tmp0,TWO_MINUTES
 	mov	TwoMinutesTimer,Tmp0
-
+	
 Timer2_quit:
 	sbi     PORTC,BIT_WDI
 	reti
@@ -1562,6 +1576,8 @@ Fatal_error_occur:
 	cbi	PORTC,BIT_R_BR
 
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
+	ldi     Tmp0,TWO_MINUTES
+	sts 	TwoMinutesTimerOfError,Tmp0	
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
 	out	TCNT1L,Tmp0
