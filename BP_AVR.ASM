@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.18 2001-02-14 15:01:36 zykov Exp $ 
+;$Id: BP_AVR.ASM,v 1.19 2001-02-14 17:25:27 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -509,6 +509,8 @@ Init_white_INT1_1:
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_320)
 	sts	SecondThreshOfMaxPressL,Tmp0
+	ldi	Tmp0,DROWN_UP_MODE_CODE
+	sts	ChildModeWord,Tmp0
 	rjmp	Init_error_check
 		
 Init_Child_Mode:
@@ -521,6 +523,8 @@ Init_Child_Mode:
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_210)
 	sts	SecondThreshOfMaxPressL,Tmp0
+	ldi	Tmp0,CHILD_MODE_CODE
+	sts	ChildModeWord,Tmp0
 	
 Init_error_check:
 	sbi	PORTD,BIT_ERR0
@@ -950,13 +954,13 @@ SPI_jump_first_byte:
 	rjmp	SPI_system_stat_command
 	rjmp	SPI_TMS_powerdown_command
 	rjmp	SPI_read_time_command
-	rjmp	SPI_read_serial_number_command
+	rjmp	SPI_read_child_mode_command
 	rjmp	SPI_read_fatal_error_command
 	rjmp	SPI_read_buffer_tms_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_set_test_flag_command
 	rjmp	SPI_set_time_command
-	rjmp	SPI_write_serial_number_command
+	rjmp	SPI_write_child_mode_command
 	rjmp	SPI_write_buffer_tms_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
@@ -985,10 +989,10 @@ SPI_read_time_command:
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
-SPI_read_serial_number_command:
-	lds	Tmp0,SPISerialNumber
+SPI_read_child_mode_command:
+	lds	Tmp0,ChildModeWord
 	out	SPDR,Tmp0
-	ldi	Tmp1,5
+	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 	
@@ -1021,10 +1025,10 @@ SPI_set_time_command:
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 
-SPI_write_serial_number_command:
+SPI_write_child_mode_command:
 	ldi	Tmp1,0x99
 	out	SPDR,Tmp1
-	ldi	Tmp1,5
+	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
 	
@@ -1054,13 +1058,13 @@ SPI_jump_second_byte:
 	rjmp	SPI_system_stat
 	rjmp	SPI_TMS_powerdown
 	rjmp	SPI_read_time_next_byte
-	rjmp	SPI_read_serial_number
+	rjmp	SPI_read_child_mode
 	rjmp	SPI_read_fatal_error
 	rjmp	SPI_read_buffer_tms
 	rjmp	SPI_erroneous
 	rjmp	SPI_set_test_flag
 	rjmp	SPI_set_time
-	rjmp	SPI_write_serial_number
+	rjmp	SPI_write_child_mode
 	rjmp	SPI_write_buffer_tms
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
@@ -1120,17 +1124,7 @@ SPI_read_time_minutes_byte:
 	out	SPDR,MinutesCounter
 	rjmp	SPI_quit
 
-SPI_read_serial_number:
-	cp	SPIByteCounter,Tmp1
-	breq	SPI_reading_ser_num_is_finish
-	ldi	XL,LOW(SPISerialNumber+5)
-	ldi	XH,HIGH(SPISerialNumber+5)
-	sub	XL,SPIByteCounter
-	sbc	XH,Tmp1
-	ld	Tmp0,X
-	out	SPDR,Tmp0
-	rjmp	SPI_quit
-SPI_reading_ser_num_is_finish:
+SPI_read_child_mode:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 	
@@ -1163,17 +1157,11 @@ SPI_set_time:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
-SPI_write_serial_number:
+SPI_write_child_mode:
 	in	Tmp0,SPDR
-	ldi	XL,LOW(SPINewSerialNumber+4)
-	ldi	XH,HIGH(SPINewSerialNumber+4)
-	sub	XL,SPIByteCounter
-	sbc	XH,Tmp1
-	st	X,Tmp0
-	cpse	SPIByteCounter,Tmp1
-	rjmp	SPI_quit
+	sts	ChildModeWord,Tmp0
 	sbi	EECR,EERIE	; Enable interrupt ready EEPROM
-	ldi	Tmp0,4+1
+	ldi	Tmp0,1
 	sts	EEPROMByteCounter,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
@@ -1498,45 +1486,38 @@ EE_writing_EEPROM_is_finished:
 	ldi	Tmp3,0
 	sts	EEPROMByteCounter,Tmp3
 
-	ldi	XL,LOW(SPISerialNumber)
-	ldi	XH,HIGH(SPISerialNumber)
-	ldi 	ZL,LOW(SERIAL_NUMBER_ADDRESS)
-	ldi 	ZH,HIGH(SERIAL_NUMBER_ADDRESS)
-
+	ldi 	ZL,LOW(CHILD_MODE_WORD_ADDRESS)
+	ldi 	ZH,HIGH(CHILD_MODE_WORD_ADDRESS)
 	out 	EEARL,ZL		;Set EEPROM Address
 	out 	EEARH,ZH		;Set EEPROM Address
 	sbi 	EECR,EERE
 	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
-	st	X+,Tmp0
+	sts	ChildModeWord,Tmp0
+	cpi	Tmp0,DROWN_UP_MODE_CODE
+	brne	EE_Child_Mode
+	
+	ldi 	Tmp0,HIGH(PRESSURE_295)
+	sts	FirstThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_295)
+	sts	FirstThreshOfMaxPressL,Tmp0
 
-	adiw	ZL,1
-	out 	EEARL,ZL		;Set EEPROM Address
-	out 	EEARH,ZH		;Set EEPROM Address
-	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
-	st	X+,Tmp0
+	ldi 	Tmp0,HIGH(PRESSURE_320)
+	sts	SecondThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_320)
+	sts	SecondThreshOfMaxPressL,Tmp0
+	reti
+		
+EE_Child_Mode:
+	ldi 	Tmp0,HIGH(PRESSURE_195)
+	sts	FirstThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_195)
+	sts	FirstThreshOfMaxPressL,Tmp0
 
-	adiw	ZL,1
-	out 	EEARL,ZL		;Set EEPROM Address
-	out 	EEARH,ZH		;Set EEPROM Address
-	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
-	st	X+,Tmp0
-
-	adiw	ZL,1
-	out 	EEARL,ZL		;Set EEPROM Address
-	out 	EEARH,ZH		;Set EEPROM Address
-	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
-	st	X+,Tmp0
-
-	adiw	ZL,1
-	out 	EEARL,ZL		;Set EEPROM Address
-	out 	EEARH,ZH		;Set EEPROM Address
-	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
-	st	X,Tmp0
-
+	ldi 	Tmp0,HIGH(PRESSURE_210)
+	sts	SecondThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_210)
+	sts	SecondThreshOfMaxPressL,Tmp0
+	
 	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
 	reti
 
