@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.34 2001-12-14 12:53:44 peter Exp $
+;$Id: BP_AVR.ASM,v 1.35 2001-12-19 13:05:22 peter Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -302,7 +302,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.34 $ $Date: 2001-12-14 12:53:44 $"
+	.db 	"$Revision: 1.35 $ $Date: 2001-12-19 13:05:22 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -1639,7 +1639,6 @@ EE_Child_Mode:
 	sts	ChildModeWord,Tmp0
 EE_quit:
 	reti
-	.db	"01234567890"
 
 
 
