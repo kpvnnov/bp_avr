@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.39 2002-08-15 16:48:39 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.40 2002-08-27 14:47:30 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -306,7 +306,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.39 $ $Date: 2002-08-15 16:48:39 $",0
+	.db 	"$Revision: 1.40 $ $Date: 2002-08-27 14:47:30 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -435,7 +435,8 @@ Init_white_1:
 	ldi	Tmp1,1<<BIT_WDI	
 	in	Tmp0,PORTC
 	eor	Tmp0,Tmp1
-	out	PORTC,Tmp0
+	out	PORTC,Tmp0	
+		
 	nop
 	wdr
 	dec	Tmp3
@@ -522,10 +523,10 @@ Init_Child_Mode:
 Init_error_check:
 	;sbi	PORTD,BIT_ERR0
 	;sbi	PORTD,BIT_ERR1
-	;	cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
-	;	cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
-	;	cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
-	;	cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 
 	;Read Fatal error from EEPROM and write to PORTD
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -707,6 +708,16 @@ Idle_mode_check_ss:
 
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+	;sbis	EECR,EEWE
+	;cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!!!
+	;sbic	EECR,EEWE
+	;sbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!!!
+
+	;sbis	EECR,EERIE
+	;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!!!
+	;sbic	EECR,EERIE
+	;sbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!!!
+	
 	nop
 	cli
 	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
@@ -1224,6 +1235,9 @@ SPI_set_time:
 	rjmp	SPI_quit_and_flag_is_set_up
 
 SPI_write_child_mode:
+
+		;cbi	PORTD,BIT_ERR0		;!!!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_ERR1		;!!!!!!!!!!!!!!!!!!!!
 	sts	ChildModeWord,Tmp0
 	cpi	Tmp0,DROWN_UP_MODE_CODE
 	breq	SPI_write_drown_up_mode
@@ -1599,8 +1613,7 @@ EE_rdy:   	; EEPROM Ready Handler
 	cli
 	lds	Tmp3,EEPROMByteCounter
 	dec	Tmp3
-	cpi	Tmp3,0
-	brlo    EE_writing_EEPROM_is_finished
+	brmi    EE_writing_EEPROM_is_finished
 	sts	EEPROMByteCounter,Tmp3
 
 	ldi 	ZL,LOW(CHILD_MODE_WORD_ADDRESS)
@@ -1611,13 +1624,20 @@ EE_rdy:   	; EEPROM Ready Handler
 	out 	EEDR,Tmp2		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
-
+	
+	;ldi	Tmp1,1<<BIT_ERR0	
+	;in	Tmp0,PORTD
+	;eor	Tmp0,Tmp1
+	;out	PORTD,Tmp0
+		
 	reti
 
 EE_writing_EEPROM_is_finished:
-	ldi	Tmp3,0
+	ldi	Tmp3,0xFF
 	sts	EEPROMByteCounter,Tmp3
 
+	;sbi	PORTD,BIT_ERR1		;!!!!!!!!!!!!!!!!!!!!
+		
 	ldi 	ZL,LOW(CHILD_MODE_WORD_ADDRESS)
 	ldi 	ZH,HIGH(CHILD_MODE_WORD_ADDRESS)
 	out 	EEARL,ZL		; Set EEPROM Address
@@ -1641,6 +1661,7 @@ EE_writing_EEPROM_is_finished:
 	reti
 
 EE_Child_Mode:
+	
 	ldi 	Tmp0,HIGH(PRESSURE_200)
 	sts	FirstThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_200)
