@@ -1,3 +1,4 @@
+;$Id: BP_AVR.ASM,v 1.12 2000-12-06 14:33:16 peter Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -175,7 +176,7 @@
   		.equ	BIT_ERR1=7
 
 	.equ	IO_PIN_PORTD_FOR_RS=0b11110010
-	.equ	PORTD_FOR_RS=0b00001101
+	.equ	PORTD_FOR_RS=0b11001101
 
 	; SRAM
 	.equ 	PressureShiftPr0=0x61
@@ -431,8 +432,8 @@ Wait_update_assr:
 	out	SPCR,Tmp0
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	
-	ldi	Tmp2,0x007
-Wiat02:		
+;	ldi	Tmp2,0x007
+;Wiat02:		
 	ldi	Tmp1,0x0FF
 Wiat01:	
 	ldi	Tmp0,0x0FF
@@ -441,18 +442,15 @@ Wiat00:
 	brne	Wiat00
 	dec	Tmp1
 	brne	Wiat01
-	dec	Tmp2
-	brne	Wiat02
+;	dec	Tmp2
+;	brne	Wiat02
 			
 Init_white_INT1_1:
 	nop
 	wdr
 	sbis    PIND,BIT_LOW_BATTERY
 	rjmp    Init_white_INT1_1
-	cbi	PORTD,BIT_ERR1
 	
-	sbi	PORTD,BIT_ERR0
-
 	ldi 	Tmp0,USBR_19_2		;11 - 19200 bps [3.6864 MHz]
 	out 	UBRR,Tmp0
 	ldi 	Tmp0,USB_TRANSMIT_ONLY
@@ -480,10 +478,12 @@ Init_white_INT1_1:
 	ldi	Tmp0,SECOND_1
 	sts	Pressure320Timer,Tmp0
 	
-		cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
-		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
-		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
-		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+	sbi	PORTD,BIT_ERR0
+	sbi	PORTD,BIT_ERR1
+	;	cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
+	;	cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+	;	cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+	;	cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 
 	;Read Fatal error from EEPROM and write to PORTD
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -511,6 +511,8 @@ Fatal_error_was:
 
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
+	sbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
+	
 	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Idle_mode_start
 
@@ -530,6 +532,8 @@ Wait_key_1:
 
 	dec	Tmp1
 	brne	Wait_key_1
+	
+		cbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
 
 	ldi	Tmp1,71		; 5 сек.
 Wait_key_2:
@@ -546,9 +550,13 @@ Wait_key_2:
 	ldi 	Tmp0,TIM0_PRESCALER_0	; Stop Timer0
 	out 	TCCR0,Tmp0
 
+		sbi	PORTD,BIT_VALVE22	;!!!!!!!!!!!!!!!!!!!!!!!!!
+	
 	sbis    PINB,BIT_KEY_SIGNAL
 	rjmp 	Idle_mode_start
 
+		sbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
+	
 	;Write EEPROM
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
 	out 	EEARL,Tmp0		;Set EEPROM Address
@@ -561,7 +569,10 @@ Wait_key_2:
 	sts	FatalError,Tmp0
 	cbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 	sbr	SystemFlags,1<<TEST_FLAG
-
+	
+	sbi	PORTD,BIT_ERR0
+	sbi	PORTD,BIT_ERR1
+	
 	rjmp 	Idle_mode_start
 
 ;**********************************************************************
@@ -717,8 +728,8 @@ Timer2_key_question:
 	sbrs	InternalFlags,PRESSURE_MORE_15_FLAG
 	rjmp	Timer2_key_1
 
-	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	rjmp	Timer2_key_1
 
 Timer2_key_0_low_battery_1:
@@ -731,8 +742,8 @@ Timer2_key_1:
 	dec     ThirtySecondsTimer
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
-	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
@@ -742,8 +753,8 @@ Timer2_zero_to_30SecTime:
 Timer2_FATAL_ERROR_FLAG_check:
 	sbrs	SystemFlags,FATAL_ERROR_FLAG
 	rjmp	Timer2_ACTIVE_TMS_FLAG_check
-	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 
 Timer2_ACTIVE_TMS_FLAG_check:
@@ -792,8 +803,8 @@ Timer2_C5VA_question:
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp1
-	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
@@ -823,8 +834,8 @@ Timer2_bit_c5va_1:
 	ldi 	Tmp0,0b00000110		;Prescaler=64, Int Disable
 	out 	ADCSR,Tmp0
 	sbr	InternalFlags,(1<<CALK_SHIFT_FLAG)
-	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 
 	ldi 	Tmp0,0
 	sts 	PressureShiftPr0,Tmp0
@@ -877,7 +888,7 @@ Tim0_white_10_mks:
 ;*******************************************************************
 SPI_stc: 	; SPI Transfer Complete Handler
 
-		sbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		;sbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	;	in	Tmp0,SPSR			;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	sbrs	InternalFlags,FIRST_BYTE_OF_SPI
 	rjmp	SPI_second_byte
@@ -894,7 +905,7 @@ SPI_bad_command:
 	ldi    	Tmp0,0x0F
 	mov	SPICommand,Tmp0
 	andi	InternalFlags,~(1<<FIRST_BYTE_OF_SPI)
-		sbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+		;sbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_good_command:
@@ -929,7 +940,7 @@ SPI_system_stat_command:
 	out	SPDR,SystemFlags
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
-		sbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+		;sbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown_command:
@@ -937,7 +948,7 @@ SPI_TMS_powerdown_command:
 	out	SPDR,Tmp1
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
-		sbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+		;sbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 	rjmp	SPI_quit
 
 SPI_read_time_command:
@@ -987,7 +998,7 @@ SPI_erroneous_command:
 
 
 SPI_second_byte:
-		cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
 	dec	SPIByteCounter
 	ldi	Tmp1,0
 	ldi	r30,LOW(SPI_jump_second_byte)
@@ -1016,16 +1027,16 @@ SPI_jump_second_byte:
 
 SPI_system_stat:
 	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
 SPI_read_fatal_error:
-		cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
 SPI_set_test_flag:
 SPI_erroneous:
 	ori	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
 SPI_TMS_powerdown:
-		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+		;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 	in	Tmp0,SPDR
 	mov	MeasurementFlagTimer,Tmp0
 	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
@@ -1173,8 +1184,8 @@ ADC_Further:
 
 	sbrs    SystemFlags,BAD_SHIFT_FLAG
 	rjmp	ADC_dec_TwoMinutesTimer
-	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 
 ADC_dec_TwoMinutesTimer:
 	mov	Tmp0,PreSecondsCounter
@@ -1332,7 +1343,7 @@ Fatal_error_occur:
 	cbi	PORTD,BIT_ERR1
 
 	cbi	PORTC,BIT_R_BR
-
+;
 	cbi     PORTC,BIT_INT3_OF_TMS
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
