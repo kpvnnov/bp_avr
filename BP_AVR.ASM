@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.17 2001-02-01 11:57:26 peter Exp $ 
+;$Id: BP_AVR.ASM,v 1.18 2001-02-14 15:01:36 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -86,6 +86,7 @@
 		.equ	PRESSURE_MORE_15_FLAG=2      	; 0
 	     	.equ	BUZZER_FLAG=3                   ; 0
 		.equ	FIRST_BYTE_OF_SPI=4		; 1
+		.equ	CHILD_MODE=5			; if ChildModeWord=A5h then 1, else 0
 	.def 	SystemFlags=r21                          ;
 	     	.equ	SYSTEM_RS_FLAG=0                ; 1
 	     	.equ	LOW_BATTERY_FLAG=1              ; 0
@@ -185,26 +186,34 @@
 	.equ 	PressureShiftHighPr2=0x64
 	.equ	Pressure295Timer=0x65
 	.equ	Pressure320Timer=0x66
-	.equ    EEPROMByteCounter=0x67
-	.equ    FatalError=0x68
-	.equ	SPINewTime=0x6A			; 3-ть байт
-	.equ	SPISerialNumber=0x70		; 5-ть байт
-	.equ	SPINewSerialNumber=0x75		; 5-ть байт
+	.equ	FirstThreshOfMaxPressL=0x67
+	.equ	FirstThreshOfMaxPressH=0x68
+	.equ	SecondThreshOfMaxPressL=0x69
+	.equ	SecondThreshOfMaxPressH=0x6A
+	.equ    EEPROMByteCounter=0x6B
+	.equ    FatalError=0x6C
+	.equ	ChildModeWord=0x6D
+	.equ	SPISerialNumber=0x6E
+	.equ	SPINewTime=0x70			; 3-ть байт		
 	.equ	SPIBufferForTms=0x80		; 64-ть байт
 
 	;EEPROM
 	.equ	FATAL_ERROR_ADDRESS=0
 	.equ	ERR_INT_ADDRESS=1
-	.equ	SERIAL_NUMBER_ADDRESS=2
+	.equ	CHILD_MODE_WORD_ADDRESS=2
 
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
 	.equ 	PRESSURE_10=0x001E
 	.equ 	PRESSURE_12=0x0023	;24
 	.equ 	PRESSURE_15=0x002B	;2D
+	.equ 	PRESSURE_195=0x023A	;378
+	.equ 	PRESSURE_210=0x0267	;3C3	
 	.equ 	PRESSURE_295=0x035F	;378
 	.equ 	PRESSURE_320=0x03A8	;3C3
-
+	.equ	DROWN_UP_MODE_CODE=0x5A
+	.equ	CHILD_MODE_CODE=0xA5
+	
 	.equ	SHIFT_TIMER_MAX_VALUE=8		; 2-е сек
 	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
 	.equ	SECOND_1=4
@@ -480,7 +489,40 @@ Init_white_INT1_1:
 	sts	Pressure295Timer,Tmp0
 	ldi	Tmp0,SECOND_1
 	sts	Pressure320Timer,Tmp0
+
+	;Read child mode
+	ldi 	Tmp0,LOW(CHILD_MODE_WORD_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(CHILD_MODE_WORD_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	cpi	Tmp0,DROWN_UP_MODE_CODE
+	brne	Init_Child_Mode
 	
+	ldi 	Tmp0,HIGH(PRESSURE_295)
+	sts	FirstThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_295)
+	sts	FirstThreshOfMaxPressL,Tmp0
+
+	ldi 	Tmp0,HIGH(PRESSURE_320)
+	sts	SecondThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_320)
+	sts	SecondThreshOfMaxPressL,Tmp0
+	rjmp	Init_error_check
+		
+Init_Child_Mode:
+	ldi 	Tmp0,HIGH(PRESSURE_195)
+	sts	FirstThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_195)
+	sts	FirstThreshOfMaxPressL,Tmp0
+
+	ldi 	Tmp0,HIGH(PRESSURE_210)
+	sts	SecondThreshOfMaxPressH,Tmp0
+	ldi	Tmp0,LOW(PRESSURE_210)
+	sts	SecondThreshOfMaxPressL,Tmp0
+	
+Init_error_check:
 	sbi	PORTD,BIT_ERR0
 	sbi	PORTD,BIT_ERR1
 	;	cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
@@ -1256,8 +1298,11 @@ Two_minutes_check:
 	rjmp	Fatal_error_occur
 
 Press_more_295_check:
-	ldi 	Tmp1,HIGH(PRESSURE_295)
-	ldi	Tmp2,LOW(PRESSURE_295)	; Compare to PRESSURE_295
+
+	;ldi 	Tmp1,HIGH(PRESSURE_295)
+	;ldi	Tmp2,LOW(PRESSURE_295)	; Compare to PRESSURE_295
+	lds	Tmp1,FirstThreshOfMaxPressH
+	lds	Tmp2,FirstThreshOfMaxPressL
 	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_295
@@ -1268,8 +1313,10 @@ Press_more_295_check:
 	cpi	Tmp0,0
 	breq	Pressure_more_295
 
-	ldi 	Tmp1,HIGH(PRESSURE_320)
-	ldi	Tmp2,LOW(PRESSURE_320)	; Compare to PRESSURE_320
+	;ldi 	Tmp1,HIGH(PRESSURE_320)
+	;ldi	Tmp2,LOW(PRESSURE_320)	; Compare to PRESSURE_320
+	lds	Tmp1,SecondThreshOfMaxPressL
+	lds	Tmp2,SecondThreshOfMaxPressL
 	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_320
