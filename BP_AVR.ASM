@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.30 2001-03-15 15:08:30 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.31 2001-03-15 16:01:09 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -199,6 +199,7 @@
 	.equ	ChildModeWord=0x6D
 	.equ	BuzzerCounter0=0x6E
 	.equ	BuzzerCounter1=0x6F
+	.equ	StatusIsSaved=0x70
 	.equ	SPINewTime=0x72			; 3-ть байт
 	.equ	SPIBufferForTms=0x80		; 64-ть байт
 
@@ -952,6 +953,7 @@ SPI_jump_first_byte:
 
 SPI_system_stat_command:
 	out	SPDR,SystemFlags
+	sts	StatusIsSaved,SystemFlags
 	ldi	Tmp1,3
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
@@ -974,8 +976,11 @@ SPI_send_acknowledge_command:
 	out	SPDR,Tmp1
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
-	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	cbr	SystemFlags,(1<<KEY_IS_PRESSED)
+	ldi	Tmp1,0xFF
+	lds	Tmp0,StatusIsSaved
+	andi	Tmp0,((1<<KEY_IS_PRESSED)|(1<<SYSTEM_RS_FLAG))
+	eor	Tmp0,Tmp1
+	and	SystemFlags,Tmp0
 	rjmp	SPI_quit
 
 SPI_read_fatal_error_command:
@@ -1073,13 +1078,13 @@ SPI_system_stat_end:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 SPI_system_stat_word_2:
-	out	SPDR,SystemFlags
-	out	UDR,SystemFlags	
+	lds	Tmp0,StatusIsSaved
+	out	SPDR,Tmp0
 	rjmp	SPI_quit
 SPI_system_stat_child_mode:
 	lds	Tmp0,ChildModeWord
 	out	SPDR,Tmp0
-	out	UDR,Tmp0	
+	;out	UDR,Tmp0	
 	rjmp	SPI_quit
 
 SPI_read_fatal_error:
