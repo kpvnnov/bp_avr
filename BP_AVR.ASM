@@ -58,38 +58,42 @@
 	.include "4434def.inc"
 
 	; Variables
-	.def 	InternalFlags=r0                  	; for RS
+
+	.def 	PreSecondsCounter=r0
+	.def 	SecondsCounter=r1
+	.def 	MinutesCounter=r2
+	.def 	HoursCounter=r3
+	.def	LowBatteryTimer=r4
+	.def	TwoMinutesTimer=r5
+	.def	CalcShiftTimer=r6
+	.def	ADCShiftPr0=r7
+	.def	ADCShiftPr2=r8
+	.def	ADC_L_pr0=r9
+	.def	ADC_H_pr0=r10
+	.def	ADC_L_pr2=r11
+	.def	ADC_H_pr2=r12
+	.def	SPIByteCounter=r13
+	.def    SPICommand=r14
+	.def	OneMinutesTimer=r15
+	.def	Tmp0=r16
+	.def	Tmp1=r17
+	.def	Tmp2=r18
+	.def	Tmp3=r19
+	.def 	InternalFlags=r20                  	; for RS
 		.equ 	ACTIVE_TMS_FLAG=0               ; 0
 		.equ    CALK_SHIFT_FLAG=1               ; 0
 		.equ	PRESSURE_MORE_15_FLAG=2      	; 0
 		.equ	FATAL_ERROR_FLAG=3              ; 0
 	     	.equ	BUZZER_FLAG=4                   ; 0
-	.def 	SystemFlags=r1                          ;
+		.equ	FIRST_BYTE_OF_SPI=5		; 1
+	.def 	SystemFlags=r21                          ;
 	     	.equ	SYSTEM_RS_FLAG=0                ; 1
 	     	.equ	LOW_BATTERY_FLAG=1              ; 0
 	     	.equ	SECOND_FLAG=2                   ; 0
 	     	.equ	MEASUREMENT_FLAG=3              ; 0
 	     	.equ	FATAL_MEASUREMENT_ERROR_FLAG=4  ; 0
-		.equ	BAD_SHIFT_FLAG=5
-	.def 	SystemFlags,SECOND_FLAG
-	.def 	PreSecondsCounter=r2
-	.def 	SecondsCounter=r3
-	.def 	MinutesCounter=r4
-	.def 	HoursCounter=r5
-	.def	LowBatteryTimer=r6
-	.def	TwoMinutesTimer=r7
-	.def	CalcShiftTimer=r8
-	.def	Tmp0=r16
-	.def	Tmp1=r17
-	.def	Tmp2=r18
-	.def	Tmp3=r19
-	.def	ADCShiftPr0=r20
-	.def	ADCShiftPr2=r21
-	.def	ADC_L_pr0=r22
-	.def	ADC_H_pr0=r23
-	.def	ADC_L_pr2=r24
-	.def	ADC_H_pr2=r25
-
+		.equ	BAD_SHIFT_FLAG=5                ; 0
+		.equ	TEST_FLAG=6                     ; 0
 	; I/O Registers
 	; for GIMSK
 	.equ	INT0_EN=1<<INT0
@@ -135,7 +139,7 @@
 
 	; Port B
   		.equ	BIT_BUZZ_AV1=0
-  		.equ	BIT_BUZZ_AV1=1
+  		.equ	BIT_BUZZ_AV2=1
   		.equ	BIT_KEY_SIGNAL=3
 
 	.equ	IO_PIN_PORTB_FOR_RS=0b00000011
@@ -150,7 +154,7 @@
   		.equ	BIT_CLK_32768=5
 
 	.equ	IO_PIN_PORTC_FOR_RS=0b00111111
-	.equ	PORTC_FOR_RS_TMS_CLK_RUN=0b00001111
+	.equ	PORTC_FOR_TMS_RS_CLK_RUN=0b00001111
 	.equ	PORTC_FOR_TMS_RUN=0b00011110
 	.equ	PORTC_FOR_CLK_STOP=0b00001010
 	.equ	PORTC_FOR_GEN_STOP=0b00001001
@@ -168,21 +172,27 @@
 	.equ	PORTD_FOR_RS=0b00001101
 
 	; SRAM
-	.equ	CalcShiftTimer=0x60
 	.equ 	PressureShiftPr0=0x61
 	.equ 	PressureShiftHighPr0=0x62
-	.equ 	PressureShiftPr0=0x63
-	.equ 	PressureShiftHighPr0=0x64
+	.equ 	PressureShiftPr2=0x63
+	.equ 	PressureShiftHighPr2=0x64
 	.equ	Pressure295Timer=0x65
 	.equ	Pressure320Timer=0x66
+	.equ    EEPROMByteCounter=0x67
+	.equ    FatalError=0x68
+	.equ	SPINewTime=0x6A			; 3-ть байт
+	.equ	SPISerialNumber=0x70		; 5-ть байт
+	.equ	SPINewSerialNumber=0x75		; 5-ть байт
 
 	;EEPROM
 	.equ	FATAL_ERROR_ADDRESS=0
-	.equ	ERR_INT_FLAG_ADDRESS=1
+	.equ	ERR_INT_ADDRESS=1
+	.equ	SERIAL_NUMBER_ADDRESS=2
 
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
 	.equ 	PRESSURE_10=0x001E
+	.equ 	PRESSURE_12=0x0024
 	.equ 	PRESSURE_15=0x002D
 	.equ 	PRESSURE_295=0x0378
 	.equ 	PRESSURE_320=0x03C3
@@ -191,20 +201,26 @@
 	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
 	.equ	SECOND_1=4
 	.equ	SECOND_15=60
+	.equ	TWO_MINUTES=118
+	.equ	ONE_MINUTES=240
 
 	.equ	WHITE_10_MKS=12
+	.equ	WHITE_30_MKS=40
+	.equ	WHITE_8_MKS=10
 	.equ	TIM0_1_MS=239		 	;255-16  prescaler=256
 	.equ	TIM0_5_MS=175              	;255-80  prescaler=256
 
-	.equ	FATAL_ERROR_315=0
+	.equ	FATAL_ERROR_2S=0
 	.equ	FATAL_ERROR_295=1
-	.equ	FATAL_ERROR_2S=2
+	.equ	FATAL_ERROR_315=2
+	.equ	C5VA_ERROR=4
 	.equ	NOT_FATAL_ERROR=0x0FF
 
 	.equ	PRE_SECOND_INITIAL_VALUE=4
 	.equ    SECOND_COUNTER_MAX_VALUE=60
 	.equ    MINUTES_COUNTER_MAX_VALUE=60
 	.equ    HOURS_COUNTER_MAX_VALUE=24
+	.equ    MAX_LOW_BATTERY_TIMER=20
 
 ;********************************************************************
 ; Interrupts vectors
@@ -268,28 +284,27 @@ UART_tx: 	; UART TX Complete Handler
 	cli
 	ldi 	Tmp1,0x09
 	rjmp	Int_error
-EE_rdy:   	; EEPROM Ready Handler
-	cli
-	ldi 	Tmp1,0x0A
-	rjmp	Int_error
 ANA_comp: 	; Analog Comparator Handler
 	cli
 	ldi 	Tmp1,0x0B
 	rjmp	Int_error
 
 Int_error:
-	ldi 	Tmp0,ERR_INT_FLAG_ADDRESS
-	out 	EEAR,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,LOW(ERR_INT_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(ERR_INT_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
 	out 	EEDR,Tmp1		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 
 Reset: 		; Reset Handler
 	cli
-	sbis	MCUSR,PORF
+	in	Tmp0,MCUSR
+	sbrs	Tmp0,PORF
 	rjmp    Init_start
 
-;Power_down_mode
+Power_down_mode:
 	wdr
 	ldi 	Tmp0,WATCHDOG_05_SEC
 	out	WDTCR,Tmp0
@@ -347,8 +362,10 @@ Init_start:
 	ldi 	Tmp0,WATCHDOG_2_SEC
 	out	WDTCR,Tmp0
 
-	ldi 	Tmp0,RAMEND
-	out 	SP,Tmp0			;Stack Pointer
+	ldi 	Tmp0,LOW(RAMEND)
+	out 	SPL,Tmp0			;Stack Pointer
+	ldi 	Tmp0,HIGH(RAMEND)
+	out 	SPH,Tmp0			;Stack Pointer
 
 	ldi 	Tmp0,IO_PIN_PORTA_FOR_RS
 	out 	DDRA,Tmp0
@@ -381,14 +398,16 @@ Init_start:
 	clr 	InternalFlags
 	clr 	SystemFlags
 	sbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	clr 	PreSecondsCounter,Tmp0
-	clr 	SecondsCounter,Tmp0
-	clr 	MinutesCounter,Tmp0
-	clr 	HoursCounter,Tmp0
+	clr 	PreSecondsCounter
+	clr 	SecondsCounter
+	clr 	MinutesCounter
+	clr 	HoursCounter
 
 	ldi 	Tmp0,0
-	sts 	PressureShift,Tmp0
-	sts 	PressureShiftHigh,Tmp0
+	sts 	PressureShiftPr0,Tmp0
+	sts 	PressureShiftHighPr0,Tmp0
+	sts 	PressureShiftPr2,Tmp0
+	sts 	PressureShiftHighPr2,Tmp0
 
 	ldi 	Tmp0,60                ;???????????????
 	sts	Pressure295Timer,Tmp0   ; 15 second
@@ -397,16 +416,20 @@ Init_start:
 	ldi 	Tmp0,SHIFT_TIMER_MAX_VALUE
 	mov	CalcShiftTimer,Tmp0
 
+	;Read Fatal error from EEPROM and write to PORTD
+	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	sts	FatalError,Tmp0
+
 Init_white_INT1_1:
 	nop
 	sbis    PORTD,BIT_LOW_BATTERY
 	rjmp    Init_white_INT1_1
 
-	;Read Fatal error from EEPROM and write to PORTD
-	ldi 	Tmp0,FATAL_ERROR_ADDRESS
-	out 	EEAR,Tmp0		;Set EEPROM Address
-	sbi 	EECR,EERE
-	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
 	sbrs	Tmp0,0
 	cbi	PORTD,BIT_ERR0
 	sbrs	Tmp0,1
@@ -421,10 +444,9 @@ Init_white_INT1_1:
 
 Fatal_error_was:
 
-
 	sbr	InternalFlags,(1<<FATAL_ERROR_FLAG)
 
-	sbic    PIND,BIT_KEY
+	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Power_save_mode_start
 
 	ldi 	Tmp0,TIM0_PRESCALER_1024
@@ -438,7 +460,7 @@ Wait_key_1:
 	in	Tmp0,TIFR
 	out     TIFR,Tmp0
 
-	sbic    PIND,BIT_KEY
+	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Power_save_mode_start
 
 	dec	Tmp1
@@ -459,16 +481,20 @@ Wait_key_2:
 	ldi 	Tmp0,TIM0_PRESCALER_0	; Stop Timer0
 	out 	TCCR0,Tmp0
 
-	sbis    PIND,BIT_KEY
+	sbis    PIND,BIT_KEY_SIGNAL
 	rjmp 	Power_save_mode_start
 
 	;Write EEPROM
-	ldi 	Tmp0,FATAL_ERROR_ADDRESS
-	out 	EEAR,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
 	ldi 	Tmp0,NOT_FATAL_ERROR
 	out 	EEDR,Tmp0		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
+	sts	FatalError,Tmp0
+	sbr	SystemFlags,1<<TEST_FLAG
 
 	rjmp 	Power_save_mode_start
 
@@ -480,8 +506,8 @@ Power_save_mode_start:
 	ldi 	Tmp0,0
 	out 	ADCSR,Tmp0		;ADC=OFF
 	out 	GIMSK,Tmp0		;Int0 and Int1 interrupts disable
+	sbr 	Tmp0,1<<TOIE2     	;Timer2 interrupts enable!
 	out 	TIMSK,Tmp0		;Time interrupts disable!
-	sbi 	TIMSK,TOIE2     	;Timer2 interrupts enable!
 
 	ldi 	Tmp0,POWER_SAVE_MODE_MCUCR
 	out 	MCUCR,Tmp0
@@ -521,7 +547,7 @@ Idle_mode_start:
 
 Ext_int1:               ;Low battery
 
-	pusp 	Tmp0
+	push 	Tmp0
 
 	cbi	PORTC,BIT_INT3_OF_TMS
 	cbi	PORTC,BIT_R_BR
@@ -543,28 +569,32 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 		; System watch
 	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
-	cpi	PreSecondsCounter,PRE_SECOND_INITIAL_VALUE
+	ldi	Tmp0,PRE_SECOND_INITIAL_VALUE
+	cp	PreSecondsCounter,Tmp0
 	brne    Timer2_pin_low_battery_question
 	clr	PreSecondsCounter
 	sbr  	SystemFlags,(1<<SECOND_FLAG)
 
 	inc     SecondsCounter
-	cpi	SecondsCounter,SECOND_COUNTER_MAX_VALUE
+	ldi	Tmp0,SECOND_COUNTER_MAX_VALUE
+	cp	SecondsCounter,Tmp0
 	brne    Timer2_pin_low_battery_question
 	clr	SecondsCounter
 
 	inc     MinutesCounter
-	cpi     MinutesCounter,MINUTES_COUNTER_MAX_VALUE
+	ldi	Tmp0,MINUTES_COUNTER_MAX_VALUE
+	cp      MinutesCounter,Tmp0
 	brne    Timer2_pin_low_battery_question
 	clr	MinutesCounter
 
 	inc	HoursCounter
-	cpi     HoursCounter,HOURS_COUNTER_MAX_VALUE
+	ldi	Tmp0,HOURS_COUNTER_MAX_VALUE
+	cp      HoursCounter,Tmp0
 	brne    Timer2_pin_low_battery_question
 	clr	HoursCounter
 
 Timer2_pin_low_battery_question:
-	sbic    PORTD,BIT_LOW_BATTERY
+	sbic    PIND,BIT_LOW_BATTERY
 	rjmp    Timer2_max_low_battery_timer
 	dec	LowBatteryTimer
 	brpl    Timer2_key_question
@@ -576,13 +606,13 @@ Timer2_max_low_battery_timer:
 	mov	LowBatteryTimer,Tmp0
 
 Timer2_key_question:
-	sbic	PORTB,BIT_KEY_SIGNAL
+	sbic	PINB,BIT_KEY_SIGNAL
 	rjmp	Timer2_key_1
 
 	ldi	Tmp0,MAX_LOW_BATTERY_TIMER     	; Set LowBatteryTimer=max
 	mov	LowBatteryTimer,Tmp0
 
-	sbrs	InternalFlag,ACTIVE_TMS_FLAG
+	sbrs	InternalFlags,ACTIVE_TMS_FLAG
 	rjmp	Timer2_key_0_low_battery_1
 
 	sbrs	InternalFlags,PRESSURE_MORE_15_FLAG
@@ -593,41 +623,62 @@ Timer2_key_question:
 	rjmp	Timer2_key_1
 
 Timer2_key_0_low_battery_1:
-	sbic    PORTD,BIT_LOW_BATTERY
+	sbic    PIND,BIT_LOW_BATTERY
 	sbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 
 Timer2_key_1:
 
-	sbrc	InternalFlag,ACTIVE_TMS_FLAG
+	sbrc	InternalFlags,ACTIVE_TMS_FLAG
 	rjmp	Timer2_C5VA_question
 
-	cpi	PreSecondsCounter,0
+	ldi	Tmp0,0
+	cp	PreSecondsCounter,Tmp0
 	brne	Timer2_quit
 
-	cpi	LowBatteryTimer,0
+	cp	LowBatteryTimer,Tmp0
 	breq	Timer2_quit
 
 	sbr	InternalFlags,(1<<ACTIVE_TMS_FLAG) ; ACTIVE_TMS_FLAG = 1
 	sbi	PORTC,BIT_GEN_STOP              ; GEN_STOP = 1
 	sbi	PORTC,BIT_R_BR                  ; R_BR = 1
 	cli
-	ldi	Tmp0,TIM0_PRESCALE_256
+	ldi	Tmp0,TIM0_PRESCALER_256
 	out	TCCR0,Tmp0
 	ldi	Tmp0,TIM0_5_MS
 	out	TCNT0,Tmp0			; 20000 cycle
 	in	Tmp0,TIFR
 	andi	Tmp0,0x01
 	out     TIFR,Tmp0
-	sbi	TIMSK,TOIE0
+	in	Tmp0,TIMSK		;Enable Timer0 interrupts
+	sbr  	Tmp0,(1<<TOIE0)
+	out	TIMSK,Tmp0
 	rjmp	Timer2_quit
 
 Timer2_C5VA_question:
 
-	sbic	PORTD,BIT_C_5VA
+	sbic	PIND,BIT_C_5VA
 	rjmp	Timer2_bit_c5va_1
 
-	dec	TwoMinutesTimer
+	dec	OneMinutesTimer
+	brne    Timer2_bit_c5va_0
+	ldi	Tmp0,ONE_MINUTES
+	mov	OneMinutesTimer,Tmp0
+	sbrc	SystemFlags,TEST_FLAG
+	rjmp    Timer2_bit_c5va_0
+	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
+	ldi	Tmp1,C5VA_ERROR
+	out 	EEDR,Tmp1		;Set Data To be written
+	sbi 	EECR,EEMWE
+	sbi 	EECR,EEWE
+	sts	FatalError,Tmp1
+	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	sbi     PORTC,BIT_R_BR
 
+
+Timer2_bit_c5va_0:
 	ldi 	Tmp0,ADM_PR2		; ADCMUX = Pr2
 	out 	ADMUX,Tmp0
 	in 	Tmp0,ADCSR              ; ADC flag reset
@@ -642,11 +693,18 @@ Timer2_bit_c5va_1:
 
 	ldi 	Tmp0,0b00000110		;Prescaler=64, Int Disable
 	out 	ADCSR,Tmp0
+	sbr	InternalFlags,(1<<CALK_SHIFT_FLAG)
 	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
 	sbi     PORTC,BIT_R_BR
 
-	ldi     Tmp0,TWO_MINUTES
-	mov	TwoMinutesTimer,Tmp0
+	ldi 	Tmp0,0
+	sts 	PressureShiftPr0,Tmp0
+	sts 	PressureShiftHighPr0,Tmp0
+	sts 	PressureShiftPr2,Tmp0
+	sts 	PressureShiftHighPr2,Tmp0
+
+	ldi     Tmp0,ONE_MINUTES
+	mov	OneMinutesTimer,Tmp0
 
 Timer2_quit:
 	reti
@@ -663,7 +721,9 @@ Tim0_white_10_mks:
 	dec	Tmp0
 	brpl	Tim0_white_10_mks
 
-	cbi  	TIMSK,TOIE0             ;Disable Timer interrupts
+	in	Tmp0,TIMSK		;Disable Timer interrupts
+	cbr  	Tmp0,(1<<TOIE0)
+	out	TIMSK,Tmp0
 	ldi	Tmp0,0
 	out 	TCCR0,Tmp0		;Stop Timer0
 	out	TCNT0,Tmp0
@@ -676,9 +736,221 @@ Tim0_white_10_mks:
 ;*******************************************************************
 SPI_stc: 	; SPI Transfer Complete Handler
 
+	sbrs	InternalFlags,FIRST_BYTE_OF_SPI
+	rjmp	SPI_second_byte
+	in	Tmp0,SPDR
+	mov     Tmp1,Tmp0
+	swap	Tmp1
+	eor	Tmp1,Tmp0
+	breq	SPI_good_command
+SPI_bad_command:
+	ldi	Tmp1,0x0FF
+	out	SPDR,Tmp1
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+
+SPI_good_command:
+	andi    Tmp0,0x0F
+	mov	SPICommand,Tmp0
+	ldi	r30,LOW(SPI_jump_first_byte)
+	ldi	r31,HIGH(SPI_jump_first_byte)
+	add	r30,Tmp0
+	adc	r31,Tmp1
+	ijmp
+
+SPI_jump_first_byte:
+	rjmp	SPI_system_stat_command
+	rjmp	SPI_TMS_powerdown_command
+	rjmp	SPI_read_time_command
+	rjmp	SPI_read_serial_number_command
+	rjmp	SPI_read_fatal_error_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_set_test_flag_command
+	rjmp	SPI_set_time_command
+	rjmp	SPI_write_serial_number_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+	rjmp	SPI_erroneous_command
+
+SPI_system_stat_command:
+	out	SPDR,SystemFlags
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_TMS_powerdown_command:
+	ldi	Tmp1,0x11
+	out	SPDR,Tmp1
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_read_time_command:
+	out	SPDR,SecondsCounter
+	ldi	Tmp1,3
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_read_serial_number_command:
+	lds	Tmp0,SPISerialNumber
+	out	SPDR,Tmp0
+	ldi	Tmp1,5
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_read_fatal_error_command:
+	lds	Tmp0,FatalError
+	out	SPDR,Tmp0
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_set_test_flag_command:
+	ldi	Tmp1,0x77
+	out	SPDR,Tmp1
+	ldi	Tmp1,1
+	mov 	SPIByteCounter,Tmp1
+	sbr	SystemFlags,1<<TEST_FLAG
+	rjmp	SPI_quit
+
+SPI_set_time_command:
+	ldi	Tmp1,0x88
+	out	SPDR,Tmp1
+	ldi	Tmp1,3
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_write_serial_number_command:
+	ldi	Tmp1,0x99
+	out	SPDR,Tmp1
+	ldi	Tmp1,5
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+
+SPI_erroneous_command:
+	rjmp	SPI_bad_command
 
 
+SPI_second_byte:
+	dec	SPIByteCounter
+	ldi	Tmp1,0
+	ldi	r30,LOW(SPI_jump_second_byte)
+	ldi	r31,HIGH(SPI_jump_second_byte)
+	add	r30,SPICommand
+	adc	r31,Tmp1
+	ijmp
 
+SPI_jump_second_byte:
+	rjmp	SPI_system_stat
+	rjmp	SPI_TMS_powerdown
+	rjmp	SPI_read_time_next_byte
+	rjmp	SPI_read_serial_number
+	rjmp	SPI_read_fatal_error
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_set_test_flag
+	rjmp	SPI_set_time
+	rjmp	SPI_write_serial_number
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+	rjmp	SPI_erroneous
+
+SPI_system_stat:
+SPI_read_fatal_error:
+SPI_set_test_flag:
+SPI_erroneous:
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+
+SPI_TMS_powerdown:
+	ldi	Tmp0,WHITE_30_MKS
+Tim0_white_30_mks:
+	dec	Tmp0
+	brpl	Tim0_white_30_mks
+	cbi	PORTC,BIT_CLK_STOP
+	cbr	InternalFlags,(1<<ACTIVE_TMS_FLAG)
+	ldi	Tmp0,WHITE_8_MKS
+Tim0_white_8_mks:
+	dec	Tmp0
+	brpl	Tim0_white_8_mks
+	cbi	PORTC,BIT_GEN_STOP
+	sbi	PORTC,BIT_RS_TMS_I
+	rjmp	SPI_quit
+
+SPI_read_time_next_byte:
+	ldi	r30,LOW(SPI_read_time)
+	ldi	r31,HIGH(SPI_read_time)
+	add	r30,SPIByteCounter
+	adc	r31,Tmp1
+	ijmp
+SPI_read_time:
+	rjmp	SPI_read_time_end
+	rjmp	SPI_read_time_hours_byte
+	rjmp	SPI_read_time_minutes_byte
+	rjmp	SPI_quit
+SPI_read_time_end:
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+SPI_read_time_hours_byte:
+	out	SPDR,HoursCounter
+	rjmp	SPI_quit
+SPI_read_time_minutes_byte:
+	out	SPDR,MinutesCounter
+	rjmp	SPI_quit
+
+SPI_read_serial_number:
+	cp	SPIByteCounter,Tmp1
+	breq	SPI_reading_ser_num_is_finish
+	ldi	XL,LOW(SPISerialNumber+5)
+	ldi	XH,HIGH(SPISerialNumber+5)
+	sub	XL,SPIByteCounter
+	sbc	XH,Tmp1
+	ld	Tmp0,X
+	out	SPDR,Tmp0
+	rjmp	SPI_quit
+SPI_reading_ser_num_is_finish:
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+
+SPI_set_time:
+	in	Tmp0,SPDR
+	ldi	YL,LOW(SPINewTime+2)
+	ldi	YH,HIGH(SPINewTime+2)
+	sub	YL,SPIByteCounter
+	sbc	YH,Tmp1
+	st	Y,Tmp0
+	cpse	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	ld	SecondsCounter,Y+
+	ld	MinutesCounter,Y+
+	ld	HoursCounter,Y
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+
+SPI_write_serial_number:
+	in	Tmp0,SPDR
+	ldi	XL,LOW(SPINewSerialNumber+4)
+	ldi	XH,HIGH(SPINewSerialNumber+4)
+	sub	XL,SPIByteCounter
+	sbc	XH,Tmp1
+	st	X,Tmp0
+	cpse	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	sbi	EECR,EERIE	; Enable interrupt ready EEPROM
+	ldi	Tmp0,4
+	sts	EEPROMByteCounter,Tmp0
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+
+SPI_quit:
+	reti
 
 ;********************************************************************
 ADC_int:
@@ -708,15 +980,15 @@ ADC_calc_shift_flag_question:
 	sub 	ADC_L_pr2,ADCShiftPr2		;Substract Low byte
 	sbc 	ADC_H_pr2,Tmp0			;Substract With Carry High byte
 	brsh	ADC_sub_shift_pr0
-	ldi	ADC_H_pr2,0
-	ldi	ADC_L_pr2,0
+	mov	ADC_H_pr2,Tmp0
+	mov	ADC_L_pr2,Tmp0
 
 ADC_sub_shift_pr0:
 	sub 	ADC_L_pr0,ADCShiftPr0		;Substract Low byte
 	sbc 	ADC_H_pr0,Tmp0			;Substract With Carry High byte
 	brsh	ADC_compare_pr0_pr2
-	ldi	ADC_H_pr0,0
-	ldi	ADC_L_pr0,0
+	mov	ADC_H_pr0,Tmp0
+	mov	ADC_L_pr0,Tmp0
 
 ADC_compare_pr0_pr2:
 	cp	ADC_L_pr0,ADC_L_pr2
@@ -727,61 +999,90 @@ ADC_compare_pr0_pr2:
 
 ADC_Further:
 	ldi 	Tmp1,HIGH(PRESSURE_15)
-	cpi 	ADC_L_pr0,LOW(PRESSURE_15)	; Compare to PRESSURE_15
+	ldi	Tmp2,LOW(PRESSURE_15)	; Compare to PRESSURE_15
+	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_15
 
-	sbrc	InternalFlags,PRESSURE_MORE_15_FLAG
-	rjmp	Next_check
-	sbr	InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
+	ldi	Tmp0,ONE_MINUTES
+	mov	OneMinutesTimer,Tmp0
 
-Next_check:
+	mov	Tmp0,PreSecondsCounter
+	cpi     Tmp0,0
+	brne	Press_more_15_flag_check
+	dec	TwoMinutesTimer
+Press_more_15_flag_check:
+	sbrc	InternalFlags,PRESSURE_MORE_15_FLAG
+	rjmp	Two_minutes_check
+	sbr	InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
+	ldi     Tmp0,TWO_MINUTES
+	mov	TwoMinutesTimer,Tmp0
+
+Two_minutes_check:
+	mov	Tmp0,TwoMinutesTimer
+	cpi     Tmp0,0
+	brne	Press_more_295_check
+	;Write EEPROM
+	ldi 	Tmp1,FATAL_ERROR_2S
+	rjmp	Fatal_error_occur
+
+Press_more_295_check:
 	ldi 	Tmp1,HIGH(PRESSURE_295)
-	cpi 	ADC_L_pr0,LOW(PRESSURE_295)	; Compare to PRESSURE_295
+	ldi	Tmp2,LOW(PRESSURE_295)	; Compare to PRESSURE_295
+	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_295
 
-	dec	Pressure295Timer
+	lds	Tmp0,Pressure295Timer
+	dec	Tmp0
+	sts	Pressure295Timer,Tmp0
 	breq	Pressure_more_295
 
 	ldi 	Tmp1,HIGH(PRESSURE_320)
-	cpi 	ADC_L_pr0,LOW(PRESSURE_320)	; Compare to PRESSURE_320
+	ldi	Tmp2,LOW(PRESSURE_320)	; Compare to PRESSURE_320
+	cp 	ADC_L_pr0,Tmp2
 	cpc 	ADC_H_pr0,Tmp1
 	brlo 	Pressure_less_320
 
-	dec	Pressure320Timer
+	lds	Tmp0,Pressure320Timer
+	dec	Tmp0
+	sts	Pressure320Timer,Tmp0
 	brne	ADC_quit
 
 	;Write EEPROM
-	ldi 	Tmp1,0x02
+	ldi 	Tmp1,FATAL_ERROR_315
 	rjmp	Fatal_error_occur
 
 Pressure_more_295:
 	;Write EEPROM
-	ldi 	Tmp1,0x01
+	ldi 	Tmp1,FATAL_ERROR_295
 	rjmp	Fatal_error_occur
 
 Pressure_less_295:
-	ldi	Pressure295Timer,SECOND_1=4
-	ldi	Pressure320Timer,SECOND_15=60
+	ldi	Tmp0,SECOND_1
+	sts	Pressure295Timer,Tmp0
+	ldi	Tmp0,SECOND_15
+	sts	Pressure320Timer,Tmp0
 	rjmp 	ADC_quit
 
 Pressure_less_320:
-	ldi	Pressure320Timer,SECOND_15=60
+	ldi	Tmp0,SECOND_15
+	sts	Pressure320Timer,Tmp0
 	rjmp 	ADC_quit
 
 Pressure_less_15:
 	cbr     InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
 	cbr     InternalFlags,(1<<BUZZER_FLAG)
 
-ADC_quit
+ADC_quit:
 	reti
 
 
 Calculat_shift:
 	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
+	ldi	Tmp0,CALC_SHIFT_DELAY
 	dec 	CalcShiftTimer
-	cpi	CalcShiftTimer,CALC_SHIFT_DELAY
+	cp	CalcShiftTimer,Tmp0
 	brsh	ADC_quit
 
 	lds 	Tmp0,PressureShiftPr0
@@ -798,7 +1099,8 @@ Calculat_shift:
 	adc	Tmp1,ADC_H_pr2
 	sts	PressureShiftHighPr2,Tmp1
 
-	cpi	CalcShiftTimer,0
+	ldi	Tmp0,0
+	cp	CalcShiftTimer,Tmp0
 	brne	ADC_quit
 
 	lds 	Tmp1,PressureShiftPr2
@@ -813,7 +1115,8 @@ Calculat_shift:
 	cpi 	Tmp1,LOW(PRESSURE_12)	;Compare to PRESSURE 12
 	cpc 	Tmp2,Tmp0
 	brlo	Calc_shift_pr0
-	ldi	ADCShiftPr2,PRESSURE_12
+	ldi	Tmp0,PRESSURE_12
+	mov	ADCShiftPr2,Tmp0
 	sbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
 Calc_shift_pr0:
 	lds 	Tmp1,PressureShiftPr0
@@ -828,7 +1131,8 @@ Calc_shift_pr0:
 	cpi 	Tmp1,LOW(PRESSURE_12)	;Compare to PRESSURE 12
 	cpc 	Tmp2,Tmp0
 	brlo	Calc_shift_flag_reset
-	ldi	ADCShiftPr0,PRESSURE_12
+	ldi	Tmp0,PRESSURE_12
+	mov	ADCShiftPr0,Tmp0
 	sbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
 
 Calc_shift_flag_reset:
@@ -836,11 +1140,14 @@ Calc_shift_flag_reset:
 	rjmp	ADC_quit
 
 Fatal_error_occur:
-	ldi 	Tmp0,FATAL_ERROR_ADDRESS
-	out 	EEAR,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
+	out 	EEARH,Tmp0		;Set EEPROM Address
 	out 	EEDR,Tmp1		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
+	sts	FatalError,Tmp1
 
 	sbrs	Tmp1,0
 	cbi	PORTD,BIT_ERR0
@@ -848,7 +1155,8 @@ Fatal_error_occur:
 	cbi	PORTD,BIT_ERR1
 
 	cbi	PORTC,BIT_R_BR
-	sbi	PORTB,BIT_BUZZER
+	sbi	PORTB,BIT_BUZZ_AV1
+	cbi	PORTB,BIT_BUZZ_AV2
 
 	sbr	InternalFlags,(1<<BUZZER_FLAG)
 	cbi     PORTC,BIT_INT3_OF_TMS
@@ -860,5 +1168,77 @@ Fatal_error_occur:
 	rjmp	ADC_quit
 
 
-***********************
+;***********************
+EE_rdy:   	; EEPROM Ready Handler
+	cli
+	lds	Tmp3,EEPROMByteCounter
+	dec	Tmp3
+	brlo    EE_writing_EEPROM_is_finished
+	sts	EEPROMByteCounter,Tmp3
+
+	ldi	Tmp2,0
+	ldi	XL,LOW(SPINewSerialNumber+4)
+	ldi	XH,HIGH(SPINewSerialNumber+4)
+	sub	XL,Tmp3
+	sbc	XH,Tmp2
+
+	ldi 	Tmp0,LOW(SERIAL_NUMBER_ADDRESS+4)
+	ldi 	Tmp1,HIGH(SERIAL_NUMBER_ADDRESS+4)
+	sub	Tmp0,Tmp3
+	sbc	Tmp1,Tmp2
+	out 	EEARL,Tmp0		;Set EEPROM Address
+	out 	EEARH,Tmp1		;Set EEPROM Address
+	ld	Tmp2,X
+	out 	EEDR,Tmp2		;Set Data To be written
+	sbi 	EECR,EEMWE
+	sbi 	EECR,EEWE
+
+	reti
+
+EE_writing_EEPROM_is_finished:
+	ldi	Tmp3,0
+	sts	EEPROMByteCounter,Tmp3
+
+	ldi	XL,LOW(SPISerialNumber)
+	ldi	XH,HIGH(SPISerialNumber)
+	ldi 	ZL,LOW(SERIAL_NUMBER_ADDRESS)
+	ldi 	ZH,HIGH(SERIAL_NUMBER_ADDRESS)
+
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	st	X+,Tmp0
+
+	adiw	ZL,1
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	st	X+,Tmp0
+
+	adiw	ZL,1
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	st	X+,Tmp0
+
+	adiw	ZL,1
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	st	X+,Tmp0
+
+	adiw	ZL,1
+	out 	EEARL,ZL		;Set EEPROM Address
+	out 	EEARH,ZH		;Set EEPROM Address
+	sbi 	EECR,EERE
+	in 	Tmp0,EEDR		;Tmp0 = EEPROM Value
+	st	X,Tmp0
+
+	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
+	reti
+
 
