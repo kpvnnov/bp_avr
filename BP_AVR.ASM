@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.21 2001-02-20 13:06:49 zykov Exp $ 
+;$Id: BP_AVR.ASM,v 1.22 2001-02-20 15:46:20 zykov Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -787,9 +787,11 @@ Timer2_key_1:
 	dec     ThirtySecondsTimer
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
+	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
+	sbic	PIND,BIT_C_5VA
+	rjmp    Timer2_FATAL_ERROR_FLAG_check
 	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
 	sbi     PORTC,BIT_R_BR
-	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
 Timer2_zero_to_30SecTime:
