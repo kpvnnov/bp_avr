@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.41 2002-09-09 13:00:20 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.42 2002-09-10 11:29:14 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -212,9 +212,10 @@
 	.equ	SIZE_SPI_BUFFER=15-1	; -1 потому что 
 					; первый байт посылаем сразу
 	;EEPROM
-	.equ	FATAL_ERROR_ADDRESS=0
-	.equ	ERR_INT_ADDRESS=1
-	.equ	CHILD_MODE_WORD_ADDRESS=2
+	.equ	EEPROM_ADDRESS_SHIFT=4
+	.equ	FATAL_ERROR_ADDRESS=0+EEPROM_ADDRESS_SHIFT
+	.equ	ERR_INT_ADDRESS=1+EEPROM_ADDRESS_SHIFT
+	.equ	CHILD_MODE_WORD_ADDRESS=2+EEPROM_ADDRESS_SHIFT
 
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
@@ -306,7 +307,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.41 $ $Date: 2002-09-09 13:00:20 $",0
+	.db 	"$Revision: 1.42 $ $Date: 2002-09-10 11:29:14 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
