@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.38 2002-08-15 14:08:49 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.39 2002-08-15 16:48:39 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -306,7 +306,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.38 $ $Date: 2002-08-15 14:08:49 $",0
+	.db 	"$Revision: 1.39 $ $Date: 2002-08-15 16:48:39 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -1599,6 +1599,7 @@ EE_rdy:   	; EEPROM Ready Handler
 	cli
 	lds	Tmp3,EEPROMByteCounter
 	dec	Tmp3
+	cpi	Tmp3,0
 	brlo    EE_writing_EEPROM_is_finished
 	sts	EEPROMByteCounter,Tmp3
 
