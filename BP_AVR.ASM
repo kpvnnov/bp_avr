@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.13 2000-12-08 10:28:41 peter Exp $ 
+;$Id: BP_AVR.ASM,v 1.14 2000-12-13 13:54:43 peter Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -644,14 +644,14 @@ Ext_int1:               ;Low battery
 
 	push 	Tmp0
 
-	cbi	PORTC,BIT_INT3_OF_TMS
+	;cbi	PORTC,BIT_INT3_OF_TMS
 	cbi	PORTC,BIT_R_BR
 
 	sbr	SystemFlags,(1<<LOW_BATTERY_FLAG)
 	nop
 	nop
 
-	sbi	PORTC,BIT_INT3_OF_TMS
+	;sbi	PORTC,BIT_INT3_OF_TMS
 
 	pop 	Tmp0
 	reti
@@ -742,8 +742,8 @@ Timer2_key_1:
 	dec     ThirtySecondsTimer
 	sbrc	SystemFlags,TEST_FLAG
 	rjmp    Timer2_zero_to_30SecTime
-	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 			; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	cbr	SystemFlags,(1<<MEASUREMENT_FLAG)
 	rjmp	Timer2_FATAL_ERROR_FLAG_check
 
@@ -805,8 +805,8 @@ Timer2_C5VA_question:
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp1
-	cbi     PORTC,BIT_R_BR 		; Impulse R_BR
-	sbi     PORTC,BIT_R_BR
+	;cbi     PORTC,BIT_R_BR 		; Impulse R_BR
+	;sbi     PORTC,BIT_R_BR
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
@@ -1358,9 +1358,9 @@ Fatal_error_occur:
 	sbrs	Tmp1,1
 	cbi	PORTD,BIT_ERR1
 
-	cbi	PORTC,BIT_R_BR
+	;cbi	PORTC,BIT_R_BR
 ;
-	cbi     PORTC,BIT_INT3_OF_TMS
+;	cbi     PORTC,BIT_INT3_OF_TMS
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
 	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
@@ -1373,7 +1373,7 @@ Fatal_error_occur:
 	ori  	Tmp0,(1<<TOIE1)
 	out	TIMSK,Tmp0
 	
-	sbi     PORTD,BIT_INT3_OF_TMS
+	;sbi     PORTD,BIT_INT3_OF_TMS
 	rjmp	ADC_quit
 
 
