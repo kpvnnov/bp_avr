@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.28 2001-03-15 14:24:15 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.29 2001-03-15 14:42:45 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -166,7 +166,7 @@
   		.equ	BIT_CLK_32768=5
 
 	.equ	IO_PIN_PORTC_FOR_RS=0b00111111
-	.equ	PORTC_FOR_TMS_RS_CLK_RUN=0b00011111
+	.equ	PORTC_FOR_TMS_RS_CLK_STOP=0b00011001
 	.equ	PORTC_FOR_TMS_RUN=0b00011110
 	.equ	PORTC_FOR_CLK_STOP=0b00001010
 	.equ	PORTC_FOR_GEN_STOP=0b00001001
@@ -374,7 +374,7 @@ Init_zero1:
 
 	ldi 	Tmp0,IO_PIN_PORTC_FOR_RS
 	out 	DDRC,Tmp0
-	ldi 	Tmp0,PORTC_FOR_TMS_RUN
+	ldi 	Tmp0,PORTC_FOR_TMS_RS_CLK_STOP
 	out 	PORTC,Tmp0
 
 	ldi 	Tmp0,IO_PIN_PORTD_FOR_RS
