@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.14 2000-12-13 13:54:43 peter Exp $ 
+;$Id: BP_AVR.ASM,v 1.15 2000-12-22 12:36:55 peter Exp $ 
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -190,6 +190,7 @@
 	.equ	SPINewTime=0x6A			; 3-ть байт
 	.equ	SPISerialNumber=0x70		; 5-ть байт
 	.equ	SPINewSerialNumber=0x75		; 5-ть байт
+	.equ	SPIBufferForTms=0x80		; 64-ть байт
 
 	;EEPROM
 	.equ	FATAL_ERROR_ADDRESS=0
@@ -199,17 +200,17 @@
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
 	.equ 	PRESSURE_10=0x001E
-	.equ 	PRESSURE_12=0x0024
-	.equ 	PRESSURE_15=0x002D
-	.equ 	PRESSURE_295=0x0378
-	.equ 	PRESSURE_320=0x03C3
+	.equ 	PRESSURE_12=0x0023	;24
+	.equ 	PRESSURE_15=0x002B	;2D
+	.equ 	PRESSURE_295=0x035F	;378
+	.equ 	PRESSURE_320=0x03A8	;3C3
 
 	.equ	SHIFT_TIMER_MAX_VALUE=8		; 2-е сек
 	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
 	.equ	SECOND_1=4
 	.equ	SECOND_15=60
 	.equ    THIRTY_SECONDS=120
-	.equ	TWO_MINUTES=118
+	.equ	TWO_MINUTES=127	;118 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
 	.equ    TWO_HOURS=120
 
@@ -227,11 +228,13 @@
 	.equ	C5VA_ERROR=4
 	.equ	NOT_FATAL_ERROR=0x0FF
 
-	.equ	PRE_SECOND_INITIAL_VALUE=32
+	.equ	PRE_SECOND_INITIAL_VALUE=4
 	.equ    SECOND_COUNTER_MAX_VALUE=60
 	.equ    MINUTES_COUNTER_MAX_VALUE=60
 	.equ    HOURS_COUNTER_MAX_VALUE=24
 	.equ    MAX_LOW_BATTERY_TIMER=20
+	
+	.equ	SIZE_BUFFER_FOR_TMS=4
 
 ;********************************************************************
 ; Interrupts vectors
@@ -482,8 +485,8 @@ Init_white_INT1_1:
 	sbi	PORTD,BIT_ERR1
 	;	cbi	PORTD,BIT_ERR1			;!!!!!!!!!!!!!!!!!!
 	;	cbi	PORTD,BIT_ERR0			;!!!!!!!!!!!!!!!!!!
-	;	cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
-	;	cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
+		cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!
+		cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!
 
 	;Read Fatal error from EEPROM and write to PORTD
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -510,8 +513,6 @@ Init_white_INT1_1:
 Fatal_error_was:
 
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
-
-	sbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
 	
 	sbic    PINB,BIT_KEY_SIGNAL
 	rjmp 	Idle_mode_start
@@ -532,8 +533,6 @@ Wait_key_1:
 
 	dec	Tmp1
 	brne	Wait_key_1
-	
-		cbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
 
 	ldi	Tmp1,71		; 5 сек.
 Wait_key_2:
@@ -549,13 +548,9 @@ Wait_key_2:
 
 	ldi 	Tmp0,TIM0_PRESCALER_0	; Stop Timer0
 	out 	TCCR0,Tmp0
-
-		sbi	PORTD,BIT_VALVE22	;!!!!!!!!!!!!!!!!!!!!!!!!!
 	
 	sbis    PINB,BIT_KEY_SIGNAL
 	rjmp 	Idle_mode_start
-
-		sbi	PORTD,BIT_VALVE21	;!!!!!!!!!!!!!!!!!!!!!!!!!
 	
 	;Write EEPROM
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
@@ -628,6 +623,7 @@ Idle_mode_start:
 	nop
 	nop
 	nop
+
 ;	nop
 		
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -645,7 +641,7 @@ Ext_int1:               ;Low battery
 	push 	Tmp0
 
 	;cbi	PORTC,BIT_INT3_OF_TMS
-	cbi	PORTC,BIT_R_BR
+	;cbi	PORTC,BIT_R_BR
 
 	sbr	SystemFlags,(1<<LOW_BATTERY_FLAG)
 	nop
@@ -664,7 +660,7 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 		; System watch
 	sbic	PINB,BIT_SPI_SS				
 	ori	InternalFlags,1<<FIRST_BYTE_OF_SPI
-		
+			
 	cbr  	SystemFlags,(1<<SECOND_FLAG)
 	inc	PreSecondsCounter
 	ldi	Tmp0,PRE_SECOND_INITIAL_VALUE
@@ -672,7 +668,7 @@ TIM2_ovf: 	; Timer2 Overflow Handler
 	brne    Timer2_pin_low_battery_question
 	clr	PreSecondsCounter
 	sbr  	SystemFlags,(1<<SECOND_FLAG)
-	
+		
 	ldi	Tmp1,1<<BIT_CLK_32768	
 	in	Tmp0,PORTC		
 	eor	Tmp0,Tmp1
@@ -793,31 +789,11 @@ Timer2_C5VA_question:
 	ldi	Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
 	
-	sbrc	SystemFlags,TEST_FLAG
+	;sbrc	SystemFlags,TEST_FLAG	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	rjmp    Timer2_bit_c5va_0
 	
-	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
-	out 	EEARL,Tmp0		;Set EEPROM Address
-	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
-	out 	EEARH,Tmp0		;Set EEPROM Address
-	ldi	Tmp1,C5VA_ERROR
-	out 	EEDR,Tmp1		;Set Data To be written
-	sbi 	EECR,EEMWE
-	sbi 	EECR,EEWE
-	sts	FatalError,Tmp1
-	;cbi     PORTC,BIT_R_BR 		; Impulse R_BR
-	;sbi     PORTC,BIT_R_BR
-	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
-
-	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
-	out	TCNT1L,Tmp0
-	ldi	Tmp0,HIGH(TIMER1_4_KHZ)
-	out	TCNT1H,Tmp0
-	ldi	Tmp0,TIMER1_PRESCALE_8
-	out	TCCR1B,Tmp0
-	in	Tmp0,TIMSK		; Enable Timer1 interrupts
-	ori  	Tmp0,(1<<TOIE1)
-	out	TIMSK,Tmp0
+	ldi 	Tmp1,C5VA_ERROR
+	rjmp	Fatal_error_occur
 	
 Timer2_bit_c5va_0:
 	ldi 	Tmp0,ADM_PR2		; ADCMUX = Pr2
@@ -828,6 +804,7 @@ Timer2_bit_c5va_0:
 	out 	ADCSR,Tmp0
 	sbi 	ADCSR,ADSC		;Start ADC Conversion
 	sbi	ADCSR,ADIE		;Enable ADC Interrupt
+
 Timer2_quit_:	
 	rjmp	Timer2_quit
 
@@ -847,20 +824,27 @@ Timer2_bit_c5va_1:
 
 	ldi     Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
+	ldi     Tmp0,TWO_MINUTES
+	mov	TwoMinutesTimer,Tmp0
 
 Timer2_quit:
 	reti
 
 ;*******************************************************************
 TIM1_ovf: 	; Timer1 Overflow Handler
+	ldi	Tmp0,LOW(TIMER1_4_KHZ)		; Timer1 enable
+	out	TCNT1L,Tmp0
+	ldi	Tmp0,HIGH(TIMER1_4_KHZ)
+	out	TCNT1H,Tmp0
+	
 	sbic	PINB,BIT_BUZZ_AV1
 	rjmp	TIM1_buzz_av1_0
 	sbi	PORTB,BIT_BUZZ_AV1
-	cbi	PORTB,BIT_BUZZ_AV2
+	sbi	PORTB,BIT_BUZZ_AV2
 	reti
 TIM1_buzz_av1_0:
 	cbi	PORTB,BIT_BUZZ_AV1
-	sbi	PORTB,BIT_BUZZ_AV2
+	cbi	PORTB,BIT_BUZZ_AV2
 	reti
 ;*******************************************************************
 
@@ -926,12 +910,12 @@ SPI_jump_first_byte:
 	rjmp	SPI_read_time_command
 	rjmp	SPI_read_serial_number_command
 	rjmp	SPI_read_fatal_error_command
-	rjmp	SPI_erroneous_command
+	rjmp	SPI_read_buffer_tms_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_set_test_flag_command
 	rjmp	SPI_set_time_command
 	rjmp	SPI_write_serial_number_command
-	rjmp	SPI_erroneous_command
+	rjmp	SPI_write_buffer_tms_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
 	rjmp	SPI_erroneous_command
@@ -965,6 +949,13 @@ SPI_read_serial_number_command:
 	ldi	Tmp1,5
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
+	
+SPI_read_buffer_tms_command:
+	ldi	Tmp0,0x55
+	out	SPDR,Tmp0
+	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
 
 SPI_read_fatal_error_command:
 	lds	Tmp0,FatalError
@@ -994,9 +985,17 @@ SPI_write_serial_number_command:
 	ldi	Tmp1,5
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
-
+	
+SPI_write_buffer_tms_command:
+	ldi	Tmp1,0xAA
+	out	SPDR,Tmp1
+	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
+	mov 	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	
 SPI_erroneous_command:
 	rjmp	SPI_bad_command
+	
 
 
 SPI_second_byte:
@@ -1015,12 +1014,12 @@ SPI_jump_second_byte:
 	rjmp	SPI_read_time_next_byte
 	rjmp	SPI_read_serial_number
 	rjmp	SPI_read_fatal_error
-	rjmp	SPI_erroneous
+	rjmp	SPI_read_buffer_tms
 	rjmp	SPI_erroneous
 	rjmp	SPI_set_test_flag
 	rjmp	SPI_set_time
 	rjmp	SPI_write_serial_number
-	rjmp	SPI_erroneous
+	rjmp	SPI_write_buffer_tms
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
 	rjmp	SPI_erroneous
@@ -1092,6 +1091,20 @@ SPI_read_serial_number:
 SPI_reading_ser_num_is_finish:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
+	
+SPI_read_buffer_tms:
+	cp	SPIByteCounter,Tmp1
+	breq	SPI_reading_buf_tms_is_finish
+	ldi	XL,LOW(SPISerialNumber+SIZE_BUFFER_FOR_TMS)
+	ldi	XH,HIGH(SPISerialNumber+SIZE_BUFFER_FOR_TMS)
+	sub	XL,SPIByteCounter
+	sbc	XH,Tmp1
+	ld	Tmp0,X
+	out	SPDR,Tmp0
+	rjmp	SPI_quit
+SPI_reading_buf_tms_is_finish:
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
 
 SPI_set_time:
 	in	Tmp0,SPDR
@@ -1123,6 +1136,18 @@ SPI_write_serial_number:
 	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
 	rjmp	SPI_quit
 
+SPI_write_buffer_tms:
+	in	Tmp0,SPDR
+	ldi	XL,LOW(SPINewSerialNumber+SIZE_BUFFER_FOR_TMS-1)
+	ldi	XH,HIGH(SPINewSerialNumber+SIZE_BUFFER_FOR_TMS-1)
+	sub	XL,SPIByteCounter
+	sbc	XH,Tmp1
+	st	X,Tmp0
+	cpse	SPIByteCounter,Tmp1
+	rjmp	SPI_quit
+	sbr	InternalFlags,(1<<FIRST_BYTE_OF_SPI)
+	rjmp	SPI_quit
+	
 SPI_quit:
 	reti
 
@@ -1131,18 +1156,34 @@ ADC_int:
 
 	in 	ADC_L_pr0,ADCL		; r24:r25 = ADC Value
 	in 	ADC_H_pr0,ADCH
-	out	UDR,ADC_L_pr0
-	out	UDR,ADC_H_pr0
+	in 	Tmp0,ADCSR              ; ADC flag reset
+	out 	ADCSR,Tmp0
+	ldi 	Tmp0,0b00000000		;Prescaler=64, Int Enable
+	out 	ADCSR,Tmp0
 
+		ldi	Tmp1,1<<BIT_VALVE21
+		in	Tmp0,PORTD		;!!!!!!!!!!!!!!!!!!
+		eor	Tmp0,Tmp1
+		out	PORTD,Tmp0
+	
 	in	Tmp0,ADMUX
 	cpi	Tmp0,ADM_PR0
 	breq    ADC_calc_shift_flag_question
 ADC_next_channel:
+
+		ldi	Tmp1,1<<BIT_VALVE22
+		in	Tmp0,PORTD		;!!!!!!!!!!!!!!!!!!
+		eor	Tmp0,Tmp1
+		out	PORTD,Tmp0
+	
 	mov	ADC_L_pr2,ADC_L_pr0
 	mov	ADC_H_pr2,ADC_H_pr0
+	ldi 	Tmp0,0b10000110		;Prescaler=64, Int Enable
+	out 	ADCSR,Tmp0
 	ldi 	Tmp0,ADM_PR0		; ADCMUX = Pr0
 	out 	ADMUX,Tmp0
 	sbi 	ADCSR,ADSC		;Start ADC Conversion
+	sbi	ADCSR,ADIE		;Enable ADC Interrupt
 	rjmp	ADC_quit
 
 ADC_calc_shift_flag_question:
@@ -1172,6 +1213,8 @@ ADC_compare_pr0_pr2:
 	mov	ADC_H_pr0,ADC_H_pr2
 
 ADC_Further:
+	out	UDR,ADC_L_pr0
+	out	UDR,ADC_H_pr0
 	ldi 	Tmp1,HIGH(PRESSURE_15)
 	ldi	Tmp2,LOW(PRESSURE_15)	; Compare to PRESSURE_15
 	cp 	ADC_L_pr0,Tmp2
@@ -1358,8 +1401,8 @@ Fatal_error_occur:
 	sbrs	Tmp1,1
 	cbi	PORTD,BIT_ERR1
 
-	;cbi	PORTC,BIT_R_BR
-;
+	cbi	PORTC,BIT_R_BR
+
 ;	cbi     PORTC,BIT_INT3_OF_TMS
 	sbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
 
@@ -1449,6 +1492,8 @@ EE_writing_EEPROM_is_finished:
 
 	cbi	EECR,EERIE	; Disable interrupt ready EEPROM
 	reti
+
+
 
 
 
