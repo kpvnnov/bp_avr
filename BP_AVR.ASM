@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.32 2001-03-20 17:12:00 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.33 2001-09-27 15:19:59 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -227,7 +227,7 @@
 	.equ	SECOND_15=60
 	.equ	THREE_SECOND=12
 	.equ    THIRTY_SECONDS=120
-	.equ	TWO_MINUTES=120			; 118 !!!!!!!!!!!!!!!!!!!!!!
+	.equ	TWO_MINUTES=130			;120,118 !!!!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
 	.equ    TWO_HOURS=120
 	.equ	THREE_MINUTES=3
