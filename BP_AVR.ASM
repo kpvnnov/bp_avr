@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.40 2002-08-27 14:47:30 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.41 2002-09-09 13:00:20 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -306,7 +306,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.40 $ $Date: 2002-08-27 14:47:30 $",0
+	.db 	"$Revision: 1.41 $ $Date: 2002-09-09 13:00:20 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
@@ -708,16 +708,13 @@ Idle_mode_check_ss:
 
 ;	wdr	; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-	;sbis	EECR,EEWE
-	;cbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!!!
-	;sbic	EECR,EEWE
-	;sbi	PORTD,BIT_VALVE21		;!!!!!!!!!!!!!!!!!!!!
-
-	;sbis	EECR,EERIE
-	;cbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!!!
-	;sbic	EECR,EERIE
-	;sbi	PORTD,BIT_VALVE22		;!!!!!!!!!!!!!!!!!!!!
-	
+	lds	Tmp0,EEPROMByteCounter
+	cpi	Tmp0,0
+	brne	Idle_mode_not_check_eeprom
+	sbic	EECR,EEWE
+	;rjmp	Idle_mode_not_check_eeprom
+	sbi	EECR,EERIE		; Enable interrupt ready EEPROM	
+Idle_mode_not_check_eeprom:	
 	nop
 	cli
 	sbrs 	InternalFlags,ACTIVE_TMS_FLAG
@@ -1624,6 +1621,8 @@ EE_rdy:   	; EEPROM Ready Handler
 	out 	EEDR,Tmp2		;Set Data To be written
 	sbi 	EECR,EEMWE
 	sbi 	EECR,EEWE
+	
+	cbi	EECR,EERIE		; Disable interrupt ready EEPROM	
 	
 	;ldi	Tmp1,1<<BIT_ERR0	
 	;in	Tmp0,PORTD
