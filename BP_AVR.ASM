@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.24 2001-03-05 13:04:58 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.25 2001-03-05 14:51:59 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -99,6 +99,7 @@
 		.equ	TEST_FLAG=6                     ; 0
 		.equ	KEY_IS_PRESSED=7		; 0
 	.def	ThirtySecondsTimer=r22
+	.def	Flag15mmTimer=r23
 
 	; I/O Registers
 	; for GIMSK
@@ -222,6 +223,7 @@
 	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
 	.equ	SECOND_1=4
 	.equ	SECOND_15=60
+	.equ	THREE_SECOND=12
 	.equ    THIRTY_SECONDS=120
 	.equ	TWO_MINUTES=120			; 118 !!!!!!!!!!!!!!!!!!!!!!
 	.equ	ONE_MINUTES=240
@@ -1266,6 +1268,8 @@ ADC_Further:
 		;eor	Tmp0,Tmp1
 		;out	PORTD,Tmp0
 		
+	ldi	Flag15mmTimer,THREE_SECOND
+		
 	ldi	Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
 
@@ -1360,6 +1364,8 @@ Pressure_less_320:
 	rjmp 	ADC_quit
 
 Pressure_less_15:
+	cpi	Flag15mmTimer,0
+	brne	ADC_dec_Flag15mmTimer
 	sbrs	InternalFlags,PRESSURE_MORE_15_FLAG
 	rjmp	Pressure_less_15_flag_0
 	cbr     InternalFlags,(1<<PRESSURE_MORE_15_FLAG)
@@ -1378,7 +1384,11 @@ Pressure_less_15_flag_0:
 
 ADC_quit:
 	reti
-
+	
+ADC_dec_Flag15mmTimer:
+	dec	Flag15mmTimer
+	rjmp	ADC_quit
+	
 Calculat_shift:
 	cbr	SystemFlags,(1<<BAD_SHIFT_FLAG)
 	ldi	Tmp0,CALC_SHIFT_DELAY
