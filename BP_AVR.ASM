@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.42 2002-09-10 11:29:14 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.43 2002-12-09 13:57:19 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -220,12 +220,12 @@
 	; Conctants
 	.equ 	PRESSURE_5=0x000F
 	.equ 	PRESSURE_10=0x001E
-	.equ 	PRESSURE_12=0x0023	;24
-	.equ 	PRESSURE_15=0x002B	;2D
-	.equ 	PRESSURE_200=0x0249	;378
-	.equ 	PRESSURE_210=0x0267	;3C3
-	.equ 	PRESSURE_295=0x035F	;378
-	.equ 	PRESSURE_320=0x03A8	;3C3
+	.equ 	PRESSURE_12=0x0023	
+	.equ 	PRESSURE_15=0x002B	
+	.equ 	PRESSURE_200=0x0267	;было 201 сейчас 211 мм.рт.ст.
+	.equ 	PRESSURE_210=0x0271	;было 211 сейчас 215 мм.рт.ст.
+	.equ 	PRESSURE_295=0x035F	;297 мм.рт.ст.
+	.equ 	PRESSURE_320=0x03A8	;322 мм.рт.ст.
 	.equ	DROWN_UP_MODE_CODE=0xA5
 	.equ	CHILD_MODE_CODE=0x5A
 	.equ	ERROR_TO_CHILD_MODE_CODE=0x55
@@ -307,7 +307,7 @@
 ;*       Program_version
 ;********************************************************************        
 Program_version:
-	.db 	"$Revision: 1.42 $ $Date: 2002-09-10 11:29:14 $",0
+	.db 	"$Revision: 1.43 $ $Date: 2002-12-09 13:57:19 $",0
 ;********************************************************************
 ;*       Initialization
 ;********************************************************************
