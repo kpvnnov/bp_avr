@@ -1,4 +1,4 @@
-;$Id: BP_AVR.ASM,v 1.26 2001-03-13 16:17:16 zykov Exp $
+;$Id: BP_AVR.ASM,v 1.27 2001-03-14 11:05:16 zykov Exp $
 ;***********************************************************
 ;  Bp_protection - file is programme for processor AT90S4434-8AC
 ;                  It is davice, which it is protected BP_005
@@ -218,6 +218,7 @@
 	.equ 	PRESSURE_320=0x03A8	;3C3
 	.equ	DROWN_UP_MODE_CODE=0xA5
 	.equ	CHILD_MODE_CODE=0x5A
+	.equ	ERROR_TO_CHILD_MODE_CODE=0x55
 
 	.equ	SHIFT_TIMER_MAX_VALUE=8		; 2-е сек
 	.equ	CALC_SHIFT_DELAY=4              ; 1-а сек на выч. смещени
@@ -476,7 +477,13 @@ Init_Child_Mode:
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_210)
 	sts	SecondThreshOfMaxPressL,Tmp0
-
+	
+	lds	Tmp0,ChildModeWord
+	cpi	Tmp0,CHILD_MODE_CODE
+	breq	Init_error_check
+	ldi	Tmp0,ERROR_TO_CHILD_MODE_CODE
+	sts	ChildModeWord,Tmp0
+	
 Init_error_check:
 	sbi	PORTD,BIT_ERR0
 	sbi	PORTD,BIT_ERR1
@@ -560,7 +567,7 @@ Wait_key_2:
 	sbi 	EECR,EEWE
 	sts	FatalError,Tmp0
 	cbr	SystemFlags,(1<<FATAL_ERROR_FLAG)
-	sbr	SystemFlags,1<<TEST_FLAG
+	;sbr	SystemFlags,1<<TEST_FLAG
 
 	sbi	PORTD,BIT_ERR0
 	sbi	PORTD,BIT_ERR1
@@ -746,16 +753,16 @@ Timer2_key_1:
 	cbr	InternalFlags,(1<<LAST_STAT_KEY)
 	sbrc	Tmp2,BIT_KEY_SIGNAL
 	sbr	InternalFlags,(1<<LAST_STAT_KEY)
-	out	UDR,SystemFlags				;!!!!!!!!!!!!!!!!!!
-	out	UDR,ThirtySecondsTimer			;!!!!!!!!!!!!!!!!!!
+	;out	UDR,SystemFlags				;!!!!!!!!!!!!!!!!!!
+	;out	UDR,ThirtySecondsTimer			;!!!!!!!!!!!!!!!!!!
 	;out	UDR,InternalFlags				;!!!!!!!!!!!!!!!!!!
 	sbrs	SystemFlags,THIRTY_SECONDS_FLAG
 	rjmp    Timer2_FATAL_ERROR_FLAG_check
 	cpi	ThirtySecondsTimer,0
 	breq    Timer2_zero_to_30SecTime
 	dec     ThirtySecondsTimer
-	sbrc	SystemFlags,TEST_FLAG
-	rjmp    Timer2_zero_to_30SecTime
+	;sbrc	SystemFlags,TEST_FLAG
+	;rjmp    Timer2_zero_to_30SecTime
 	sbic	PIND,BIT_C_5VA
 	rjmp    Timer2_FATAL_ERROR_FLAG_check
 	cbi     PORTC,BIT_R_BR 				; Impulse R_BR
@@ -766,7 +773,7 @@ Timer2_zero_to_30SecTime:
 	cbr	SystemFlags,(1<<THIRTY_SECONDS_FLAG)
 
 Timer2_FATAL_ERROR_FLAG_check:
-	sbrs	SystemFlags,TEST_FLAG
+	;sbrs	SystemFlags,TEST_FLAG
 	sbrs	SystemFlags,FATAL_ERROR_FLAG
 	rjmp	Timer2_ACTIVE_TMS_FLAG_check
 	cbi     PORTC,BIT_R_BR 			; Impulse R_BR
@@ -801,8 +808,8 @@ Timer2_C5VA_question:
 	ldi	Tmp0,ONE_MINUTES
 	mov	OneMinutesTimer,Tmp0
 
-	sbrc	SystemFlags,TEST_FLAG	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	rjmp    Timer2_bit_c5va_0
+	;sbrc	SystemFlags,TEST_FLAG	;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	;rjmp    Timer2_bit_c5va_0
 
 	ldi 	Tmp1,C5VA_ERROR
 	rjmp	Fatal_error_occur
@@ -963,12 +970,12 @@ SPI_read_time_command:
 	rjmp	SPI_quit
 
 SPI_send_acknowledge_command:
-	ldi	Tmp0,0x33
-	out	SPDR,Tmp0
-	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
-	cbr	SystemFlags,(1<<KEY_IS_PRESSED)
+	ldi	Tmp1,0x33
+	out	SPDR,Tmp1
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
+	cbr 	SystemFlags,(1<<SYSTEM_RS_FLAG)
+	cbr	SystemFlags,(1<<KEY_IS_PRESSED)
 	rjmp	SPI_quit
 
 SPI_read_fatal_error_command:
@@ -979,8 +986,8 @@ SPI_read_fatal_error_command:
 	rjmp	SPI_quit
 
 SPI_read_buffer_tms_command:
-	ldi	Tmp0,0x55
-	out	SPDR,Tmp0
+	ldi	Tmp1,0x55
+	out	SPDR,Tmp1
 	ldi	Tmp1,SIZE_BUFFER_FOR_TMS
 	mov 	SPIByteCounter,Tmp1
 	rjmp	SPI_quit
@@ -990,7 +997,7 @@ SPI_set_test_flag_command:
 	out	SPDR,Tmp1
 	ldi	Tmp1,1
 	mov 	SPIByteCounter,Tmp1
-	sbr	SystemFlags,1<<TEST_FLAG
+	;sbr	SystemFlags,1<<TEST_FLAG
 	rjmp	SPI_quit
 
 SPI_set_time_command:
@@ -1067,10 +1074,12 @@ SPI_system_stat_end:
 	rjmp	SPI_quit
 SPI_system_stat_word_2:
 	out	SPDR,SystemFlags
+	;out	UDR,SystemFlags	
 	rjmp	SPI_quit
 SPI_system_stat_child_mode:
 	lds	Tmp0,ChildModeWord
 	out	SPDR,Tmp0
+	;out	UDR,Tmp0	
 	rjmp	SPI_quit
 
 SPI_read_fatal_error:
@@ -1454,8 +1463,8 @@ Calc_shift_flag_reset:
 Fatal_error_occur:
 	sbrc	SystemFlags,FATAL_ERROR_FLAG
 	rjmp	ADC_quit
-	sbrc	SystemFlags,TEST_FLAG
-	rjmp	ADC_quit
+	;sbrc	SystemFlags,TEST_FLAG
+	;rjmp	ADC_quit
 	ldi 	Tmp0,LOW(FATAL_ERROR_ADDRESS)
 	out 	EEARL,Tmp0		;Set EEPROM Address
 	ldi 	Tmp0,HIGH(FATAL_ERROR_ADDRESS)
@@ -1545,7 +1554,13 @@ EE_Child_Mode:
 	sts	SecondThreshOfMaxPressH,Tmp0
 	ldi	Tmp0,LOW(PRESSURE_210)
 	sts	SecondThreshOfMaxPressL,Tmp0
-
+	
+	lds	Tmp0,ChildModeWord
+	cpi	Tmp0,CHILD_MODE_CODE
+	breq	EE_quit
+	ldi	Tmp0,ERROR_TO_CHILD_MODE_CODE
+	sts	ChildModeWord,Tmp0
+EE_quit:
 	reti
 
 
